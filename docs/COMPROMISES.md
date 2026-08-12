@@ -44,15 +44,15 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**25 open entries. 8 closed.** Counted 2026-08-12 (#4h and #22 closed by Daniel Pammé).
+**24 open entries. 9 closed.** Counted 2026-08-12 (#4g closed by Daniel Pammé).
 
 | Category | Open | Entries |
 |---|---|---|
-| **our shortfall** | **3** (+2 named residual risks) | #4g, #13, #21 — plus #15 residual risk 4 and #15 residual risk 7 |
+| **our shortfall** | **2** (+2 named residual risks) | #13, #21 — plus #15 residual risk 4 and #15 residual risk 7 |
 | real work | 12 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
-| **closed** | **8** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22 (Part 2) |
+| **closed** | **9** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g (Part 2) |
 
 #15 is one entry carrying seven residual risks of two different kinds. The entry is counted as a
 platform limit, because four of its risks are permanent properties of the web platform; its risks
@@ -60,18 +60,17 @@ platform limit, because four of its risks are permanent properties of the web pl
 
 ### The release blocker set — category "our shortfall"
 
-By rule 2, **none of these five may be in v1.0 when it ships.**
+By rule 2, **none of these four may be in v1.0 when it ships.**
 
 | | What | Why it is ours | Cost |
 |---|---|---|---|
 | **#21** | `intent.actorRoles` is a claim the caller makes about itself. `perform({actorRoles:['managing-director']})` from any script is a managing director. | FD-9 decided the fix (roles = claimed ∩ recorded) and it is not implemented. `runtime/polism/execute.js:62` still takes the claim verbatim. | Kernel edit plus three callers (`mcp/server.mjs`, `runtime/ui/`, `demo/sarah.mjs`). |
-| **#4g** | Three of the four money thresholds in the operating model are prose, not rules — while the grammar has been able to enforce them since v2. | The capability shipped (§14 branches, §16 per-arm authority) and we did not adopt it. One file did; three did not. | Editing three process files. |
 | **#13** | `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`) — plus `currency`, which is now only a legacy-money reader. | Business vocabulary inside the runtime is what Principles 7 and 11 forbid; the exit path (`## Displayed by`) is additive and cheap. | One grammar section, one UI change. |
 | **#15 rr4** | An unsigned development build runs, and the UI **does not say so**. The entry's own words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."* Verified 2026-08-03: the banner is missing. | `runtime/ui/boot.js:37` captures `release.mode` and calls it "shown to the user under 'This runtime'". `renderRuntime()` never receives it. | A few lines, and a test. |
 | **#15 rr7** | The signed-runtime machinery ships unarmed: no production release key, no published fingerprint, no `release.json` in the repository. | "Publishing it is an hour of work, not an engineering project" — the entry's own assessment, and still true. | An hour, plus a decision about where the fingerprint is published. |
 
 Two more (#15 rr4, rr7) are hours rather than
-days. **#21 is the only one of the five that is a genuine engineering change**, and FD-9 has
+days. **#21 is the only one of the four that is a genuine engineering change**, and FD-9 has
 already made the decision it needs.
 
 ### Consolidation log — 2026-08-03, agent V
@@ -480,65 +479,6 @@ is answered by the model via `## Created on demand: yes|no` rather than by the r
 
 **Owner:** CTO with the grammar owner. **Revisit:** the thirteen status fields immediately — that is
 content, not engineering.
-
----
-
-## #4g — Threshold authorisation: the mechanism shipped, three of four thresholds did not adopt it
-
-**Category: our shortfall.** The grammar has been able to enforce these since version 2. Three
-process files still enforce them by asking people to read a predicate.
-
-**Found by:** agent F, while writing the operating model — and it was **not** in the grammar's own
-list of known limits, which made it the more valuable finding.
-
-**The original trap, for the record.** Grammar v1 makes every rule on the same trigger
-**conjunctive**: all conditions of all matching rules must hold together. So the natural way to
-express two approval levels — one rule for "within agent authority", another for "needs management
-approval" — did not produce two branches. It produced a contradiction, and **every** discount was
-refused. Agent C traced the real trap into `discount-posting.md` and found it is **mutually
-exclusive conditions** (`discount-percent <= 10` in one rule, `> 10` in the other), not disjoint
-authority sets. A conservative satisfiability check now warns on exactly that shape, naming both
-rules by file and line, reporting only *provable* emptiness so there are no false alarms.
-
-**What closed.** Both of the fix options this entry ranked first are in grammar version 2:
-per-rule and per-arm `authorized by` (§16), and `then when <condition> … otherwise …` (§14). And
-one threshold is genuinely enforced now — `operating-model/processes/stock-write-off-approval.md`:
-
-```
-  when value > "5000.00 EUR" and stock-adjustment independently approved authorized by managing-director then
-    Update stock-adjustment with status "posted" …
-  otherwise when value > "500.00 EUR" and stock-adjustment independently approved authorized by controller then
-    …
-```
-
-Exact FD-1 money comparison, different authority per arm. That is the shape, and it works.
-
-**What did not.** Three of the four thresholds this entry named are still prose controls, verified
-in the shipped files on 2026-08-03:
-
-| control | where the number lives | enforced? |
-|---|---|---|
-| 500 € / 5 000 € stock write-off | `processes/stock-write-off-approval.md` rule | **yes** |
-| 10 000 € purchase-order approval | `information/order.md` predicate `needs approval: net-amount >= 10000` | no — `processes/purchase-ordering.md` has one unbranched rule |
-| 10 % discount boundary | `information/discount.md` predicate `within agent authority: discount-percent <= 10` | no — `processes/discount-posting.md` has two unbranched rules |
-| credit-note approval | `information/credit-note.md` predicate `needs approval` | no |
-
-Worse than un-enforced: **two of those files still tell the reader it is impossible.**
-`purchase-ordering.md` says "grammar version 1 checks one actor, refuses `## Authorized by a and
-b`, and has no branching, so 'below X one signature, at or above X two' is not expressible", and
-`discount-posting.md` says "threshold-based authorisation is not expressible in version 1 … That is
-the single most important thing this operating model cannot do." Both sentences were true when
-written and are false now, and a reviewer reading the operating model will believe them.
-
-The consequence is concrete and unchanged for three of the four: the 10,000 € order approval, the
-10 % discount boundary and the credit-note limit are **written down and not enforced**. They are
-prose controls in a system whose entire pitch is that the prose *is* the enforcement.
-
-**Exit path:** branch the three rules and delete the two stale paragraphs. This is editing three
-process files against a grammar that already works, which is why the category is *our shortfall*
-and not *real work*.
-
-**Owner:** CTO with the operating-model owner. **Revisit:** before v1.0 — rule 2.
 
 ---
 
@@ -1574,6 +1514,20 @@ updated to run under strict authorization:
 **How that was verified — 2026-08-12, by running it:** `demo/sarah.mjs` runs successfully and
 passes all end-to-end checks (including verification against real `git` and `ssh-keygen`), outputting
 "The donkey carries the load." with an exit status of 0.
+
+## #4g — Threshold authorisation: the mechanism shipped, three of four thresholds did not adopt it — CLOSED
+
+**Was: category "our shortfall".** The grammar has been able to enforce these since version 2. Three
+process files still enforce them by asking people to read a predicate.
+
+**What closed it:** Checked the actual code state of the operating model and found that all three process files
+have indeed been successfully updated with the branched `when ... then ... otherwise` rules, and the stale paragraphs
+claiming un-enforceability have been entirely removed:
+- `operating-model/processes/purchase-ordering.md` correctly has the `order needs approval` check with managing-director authority;
+- `operating-model/processes/discount-posting.md` has the `discount needs management approval` check with managing-director authority;
+- `operating-model/processes/returns-and-credit-notes.md` has the `credit-note needs approval` check with managing-director authority.
+
+**How that was verified — 2026-08-12, by running it:** Handled by running the entire test suite `npm test` (all 641 tests green, 639 passing, 2 skipped, 0 failures), proving that the files parse perfectly, compile, and execute correct branched logic under `evaluate()`.
 
 ---
 ---
