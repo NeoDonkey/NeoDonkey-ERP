@@ -817,6 +817,101 @@ test('Principle 7: no entity name is hardcoded in any view module', async () => 
   }
 });
 
+test('unsigned builds show the unverified/unsigned state in "This runtime" screen', async () => {
+  const originalDocument = globalThis.document;
+
+  globalThis.document = {
+    createElement(tag) {
+      return {
+        tagName: tag.toUpperCase(),
+        className: '',
+        textContent: '',
+        childNodes: [],
+        attributes: {},
+        appendChild(child) {
+          this.childNodes.push(child);
+          return child;
+        },
+        setAttribute(k, v) {
+          this.attributes[k] = v;
+        },
+        addEventListener(type, fn) {
+          // No-op for testing
+        }
+      };
+    },
+    createDocumentFragment() {
+      return {
+        nodeType: 11,
+        childNodes: [],
+        appendChild(child) {
+          this.childNodes.push(child);
+          return child;
+        }
+      };
+    },
+    createTextNode(text) {
+      return {
+        nodeType: 3,
+        textContent: text
+      };
+    }
+  };
+
+  try {
+    const { renderRuntime } = await import('../runtime/ui/views.js');
+
+    const mockVm = {
+      version: '1.0.0',
+      hashes: { files: [], combined: 'abc', command: [] },
+      origin: { origin: 'http://localhost:8080', base: 'http://localhost:8080/', secureContext: true, standalone: false, shellFiles: 0 },
+      worker: { supported: false },
+      persistence: null,
+      update: { waiting: false },
+      release: { mode: 'unsigned', version: null, fingerprint: null }
+    };
+    const mockHandlers = { onRehash: () => {}, onCheckUpdate: () => {}, onApplyUpdate: () => {} };
+
+    const rendered = renderRuntime(mockVm, mockHandlers);
+
+    // Helpers to search rendered output
+    function findNodeByClass(node, className) {
+      if (node.className === className) return node;
+      for (const child of node.childNodes || []) {
+        const found = findNodeByClass(child, className);
+        if (found) return found;
+      }
+      return null;
+    }
+
+    function findTextInNode(node, text) {
+      if (node.textContent && node.textContent.includes(text)) return true;
+      for (const child of node.childNodes || []) {
+        if (findTextInNode(child, text)) return true;
+      }
+      return false;
+    }
+
+    // Verify 'unsigned' state notice notice-warn is displayed
+    const noticeNode = findNodeByClass(rendered, 'notice notice-warn');
+    assert.ok(noticeNode, 'should render notice notice-warn for unsigned release');
+    assert.ok(findTextInNode(noticeNode, 'This runtime is not signed'), 'should mention unsigned release');
+
+    // Verify 'verified' state displays correctly
+    const mockVmVerified = {
+      ...mockVm,
+      release: { mode: 'verified', version: '1.0.0', fingerprint: 'SHA256:123' }
+    };
+    const renderedVerified = renderRuntime(mockVmVerified, mockHandlers);
+    const okNode = findNodeByClass(renderedVerified, 'notice notice-ok');
+    assert.ok(okNode, 'should render notice notice-ok for verified release');
+    assert.ok(findTextInNode(okNode, 'Signature verified against the key pinned on this machine'), 'should mention verified release');
+
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
 /**
  * The honest counterpart to the test above. The UI *does* know a few conventional FIELD names —
  * four for working out a document's human label, and `currency` for rendering `money` (which is

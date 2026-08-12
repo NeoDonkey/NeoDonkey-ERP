@@ -8,6 +8,7 @@ happened.
 
 ## 2026-08-12
 
+- Closed compromise #15 rr4 (unsigned build visibility under "This runtime" screen). Passed `release` into `renderRuntime` and updated `releaseBlock` in `views.js` to correctly distinguish and display the unverified/unsigned state as "This runtime is not signed" (and `'verified'` correctly as verified). Added a robust test in `test/g-ui.test.js` to assert the rendering of both states.
 - Closed compromise #4g (threshold authorisation content adoption). Checked operating-model process files and verified that they have all successfully adopted branched `when ... then ... otherwise` rules to enforce the 10,000 € purchase order, 10 % discount, and 100 € credit-note limits, and removed stale prose comments.
 - Closed compromises #4h (master data promotion paths) and #22 (permissive acceptance demo).
   Added explicit processes for article activation, supplier approval, and purchase order confirmation

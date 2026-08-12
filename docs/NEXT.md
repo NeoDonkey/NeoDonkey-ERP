@@ -9,7 +9,7 @@ so it is the one that has to be true.
 
 ## Where the project stands
 
-v0.1 of the runtime is in the repository and the suite is green: **641 tests, 639 passing, 2
+v0.1 of the runtime is in the repository and the suite is green: **642 tests, 640 passing, 2
 skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
 red build.
 
@@ -28,13 +28,13 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-**Close `COMPROMISES.md` #15 rr4.**
+**Close `COMPROMISES.md` #13.**
 
-*The gap:* An unsigned development build runs, and the UI does not say so. The entry's own words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."* `runtime/ui/boot.js:37` captures `release.mode` and calls it "shown to the user under 'This runtime'", but `renderRuntime()` never receives it.
+*The gap:* `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`). Business vocabulary inside the runtime is what Principles 7 and 11 forbid.
 
-*Why it is next:* It is a small but critical UI gap that directly affects the integrity of the signed-runtime delivery guarantees. Resolving it will make the unverified state visible, ensuring the user always knows the provenance of the code they are running.
+*Why it is next:* It is a direct violation of our strict architectural boundaries. The exit path is additive and cheap: a `## Displayed by` grammar section, then one UI change.
 
-*Done when:* The unverified/unsigned state is rendered properly in the UI under 'This runtime', the stale "verification is v0.2" paragraph is removed, and a test asserts that the unverified/unsigned banner/state is correctly displayed under unsigned builds.
+*Done when:* Display names are moved out of the runtime and into the operating model where they belong, supported by a parser extension.
 
 ---
 
@@ -43,10 +43,7 @@ missing — most gaps are already named there, with a category and a cost.
 The release blocker set — category **our shortfall** in `docs/COMPROMISES.md`. By standing rule 2,
 none of these may be in v1.0.
 
-1. **#13** — `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`,
-   `label`, `description`). Business vocabulary inside the runtime is what Principles 7 and 11
-   forbid. The exit path is additive: a `## Displayed by` grammar section, then one UI change.
-2. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
+1. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
    `perform({actorRoles:['managing-director']})` from any script is a managing director.
    `runtime/polism/execute.js:62` still takes the claim verbatim. This is the only one of the seven
    that is genuine engineering, and FD-9 in `docs/ROADMAP-V1.md` has already decided the fix:
