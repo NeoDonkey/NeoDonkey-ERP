@@ -1,0 +1,35 @@
+name: Autonomous PR Auto-Merge
+
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+permissions:
+  pull-requests: write
+  contents: write
+
+jobs:
+  auto-approve-and-merge:
+    runs-on: ubuntu-latest
+    # Restrict trigger to only trigger for the owner (danielfrommunich) or the masqueraded agent
+    if: github.actor == 'danielfrommunich'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Approve and Auto-Merge Pull Request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_URL="${{ github.event.pull_request.html_url }}"
+          echo "Processing PR: $PR_URL"
+
+          # Approve the PR
+          gh pr review "$PR_URL" --approve --body "Automated approval of autonomous contribution."
+
+          # Merge the PR with squash strategy
+          gh pr merge "$PR_URL" --squash --auto --delete-branch
