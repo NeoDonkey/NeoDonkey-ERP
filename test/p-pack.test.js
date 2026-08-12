@@ -451,6 +451,12 @@ test('a repo whose objects exist only in a pack checks out clean', async () => {
  */
 function buildGitRepo(dir, repackArgs, config = []) {
   gitCommitting(dir, 'init', '-q', '.');
+  // Keep git from maintaining the repository behind our back. Without this the pack layout
+  // depends on the git version and on how many loose objects the loop happens to produce, and
+  // the test reads whichever pack it finds. Seen on Linux CI, not on macOS.
+  gitCommitting(dir, 'config', 'gc.auto', '0');
+  gitCommitting(dir, 'config', 'gc.autoPackLimit', '0');
+  gitCommitting(dir, 'config', 'maintenance.auto', 'false');
   let text = '';
   for (let revision = 0; revision < 8; revision++) {
     text += `revision ${revision}\n${Array.from({ length: 40 }, (_, i) => `line ${revision}-${i} lorem ipsum dolor sit amet consectetur adipiscing\n`).join('')}`;
@@ -462,9 +468,18 @@ function buildGitRepo(dir, repackArgs, config = []) {
     gitCommitting(dir, 'commit', '-q', '-m', `revision ${revision}`);
   }
   gitCommitting(dir, ...config, 'repack', ...repackArgs);
-  const names = readdirSync(`${dir}/.git/objects/pack`).filter((n) => n.endsWith('.pack'));
-  assert.equal(names.length, 1, `expected one pack, got ${names.join(', ')}`);
-  const base = names[0].slice(0, -5);
+  const entries = readdirSync(`${dir}/.git/objects/pack`);
+  const names = entries.filter((n) => n.endsWith('.pack'));
+  // A cruft pack holds unreachable objects and is recognised by its .mtimes sibling. It is not
+  // the pack under test, and git writes one or does not depending on its version.
+  const reachable = names.filter((n) => !entries.includes(`${n.slice(0, -5)}.mtimes`));
+  assert.equal(reachable.length, 1, `expected one pack of reachable objects, got ${
+    names.length} pack(s): ${names.map((n) => {
+    const b = n.slice(0, -5);
+    const marks = ['mtimes', 'keep', 'idx', 'rev'].filter((e) => entries.includes(`${b}.${e}`));
+    return `${n} (${statSync(`${dir}/.git/objects/pack/${n}`).size} bytes, ${marks.join('+') || 'no siblings'})`;
+  }).join('; ')}`);
+  const base = reachable[0].slice(0, -5);
   return {
     base,
     pack: new Uint8Array(readFileSync(`${dir}/.git/objects/pack/${base}.pack`)),
@@ -677,7 +692,11 @@ test('100 000 objects: pack, index and read timings, loose vs packed', { skip: B
 test('the size cost of not writing deltas, measured against git', async () => {
   /** git's own pack for a repo, next to ours for the same object set. */
   async function compare(dir, label) {
-    const gitPack = readdirSync(`${dir}/.git/objects/pack`).find((n) => n.endsWith('.pack'));
+    const packDir = readdirSync(`${dir}/.git/objects/pack`);
+    // Skip a cruft pack: it holds unreachable objects, so measuring against it would compare
+    // our pack of this object set to git's pack of a different one.
+    const gitPack = packDir.find((n) => n.endsWith('.pack')
+      && !packDir.includes(`${n.slice(0, -5)}.mtimes`));
     const gitBytes = statSync(`${dir}/.git/objects/pack/${gitPack}`).size;
     const theirs = catFileAll(dir);
     const ours = await writePack([...theirs.values()].map((o) => ({ type: o.type, content: o.content })));
