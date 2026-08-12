@@ -46,8 +46,16 @@ jobs:
       - uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          # AGENT_PAT if present, GITHUB_TOKEN otherwise. The distinction matters here and
+          # nowhere else: a pull request opened with GITHUB_TOKEN does not trigger further
+          # workflows — GitHub prevents that so automation cannot loop — so `test` would
+          # never run on this lane's pull requests and `auto-merge` would never fire. The
+          # branch would simply sit there. With a personal access token the events fire
+          # normally and this lane is as autonomous as the other one.
+          GITHUB_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
         with:
           model: opencode/big-pickle
+          use_github_token: true
           share: false
           prompt: |
             You maintain lane B of the NeoDonkey repository. Read AGENTS.md first — the
