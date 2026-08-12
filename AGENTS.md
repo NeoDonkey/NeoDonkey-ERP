@@ -91,6 +91,26 @@ If you were given no lane, you are in lane A.
 "do this next" — two readers would take the same item and build it twice. Issues can be claimed;
 a Markdown file cannot.
 
+### First: decide which job this session does
+
+Nobody assigns you a role. Look at the queue and take the one the repository needs:
+
+```bash
+gh issue list --state open --label ready       # how much specified work is waiting
+gh pr list --state open                        # how much is already in flight
+```
+
+| What you find | Do this |
+|---|---|
+| Fewer than 3 `ready` issues unclaimed | **Specify.** The queue is running dry and implementing the last item leaves the next session with nothing. |
+| 3 to 20 unclaimed | **Implement.** There is work; adding more specification is not what is short. |
+| More than 20 `ready` | **Implement**, and do not specify at all — the backlog is already a pile. |
+| Queue full but everything claimed by open pull requests | **Verify.** Check an existing issue's claims against the code, or improve test coverage. |
+
+Judgement beats the table where they disagree — a queue of twenty issues that are all vague is
+worse than five that are precise, and specifying is then the useful work. Say in your pull request
+which job you took and why.
+
 ### If you implement (engineer)
 
 1. List open issues labelled `ready`. Ignore `needs-decision` and `blocked` entirely.
@@ -109,23 +129,21 @@ that has drifted from the code, and say in the pull request that the queue was e
 
 ### If you specify (planning)
 
-1. **Count open issues labelled `ready`. If there are more than twenty, write none** — go and
-   verify existing ones against the code instead. A backlog that grows faster than it is worked is
-   a pile, not progress.
-2. Read the manifesto, `docs/ROADMAP-V1.md` (Part 2's ten gate conditions, Part 3's waves),
-   `docs/READINESS.md` and `docs/COMPROMISES.md`.
-3. **Decompose; do not invent.** The scope of this product is already decided in those documents.
-   Your work is turning "DATEV export" or "opening balances" into issues someone can implement —
-   not deciding whether they belong. An issue whose subject appears in none of those documents
-   should not exist.
-4. Every issue **cites its source**: a manifesto principle, a gate condition, a wave, or a register
-   entry. An issue without one will not be implemented.
-5. Every regulatory or accounting claim **cites a primary source** — the regulation, the official
-   specification, the tax authority's own documentation. Not a blog, not a forum, not a summary.
-   Research is welcome and often better than memory; unsourced research is not research.
-6. State how the issue will be **verified**: what test proves it, what command demonstrates it.
-   "Nothing in here is asserted from a report" is the register's standing rule and it applies to
-   specifications too.
+**Read `docs/SPECIFYING.md` first.** It is the long form of this section: how to decompose the
+roadmap, what counts as a primary source, how to write a verification that means something, and
+what you may not decide. In short:
+
+1. **Decompose; do not invent.** Scope is already decided in the manifesto, `docs/ROADMAP-V1.md`,
+   `docs/READINESS.md` and `docs/COMPROMISES.md`. Turning "DATEV export" into implementable issues
+   is your work; deciding whether it belongs is not.
+2. Every issue **cites its source** and quotes the sentence. An issue without one will not be
+   implemented, because nobody can tell whether it is in scope.
+3. Every regulatory or accounting claim **cites a primary source** — the regulation, the official
+   specification, the tax authority's own documentation, with the article or field that applies.
+   Research is welcome and is usually better than recollection; unsourced research is not research.
+4. State how the issue will be **verified**: the test that fails without the change, or the command
+   that demonstrates it. Not an adjective.
+5. Give it an `area:` label matching the directories it will touch, and a priority.
 
 ### What you may not decide
 
