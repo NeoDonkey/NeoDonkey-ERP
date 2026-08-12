@@ -8,6 +8,7 @@ happened.
 
 ## 2026-08-12
 
+- Closed compromise #4g (threshold authorisation content adoption). Checked operating-model process files and verified that they have all successfully adopted branched `when ... then ... otherwise` rules to enforce the 10,000 € purchase order, 10 % discount, and 100 € credit-note limits, and removed stale prose comments.
 - Closed compromises #4h (master data promotion paths) and #22 (permissive acceptance demo).
   Added explicit processes for article activation, supplier approval, and purchase order confirmation
   under `operating-model/processes/` so that master data can be promoted via governed, executable rules.

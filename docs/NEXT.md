@@ -28,21 +28,13 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-**Close `COMPROMISES.md` #4g.**
+**Close `COMPROMISES.md` #15 rr4.**
 
-*The gap:* Three of the four money thresholds in the operating model are prose, not rules — even
-though the grammar has been able to enforce them since version 2 (§14 branches, §16 per-arm authority).
-One file adopted it (`stock-write-off-approval.md`), three did not. This is a content gap where
-thresholds are written down in prose but not enforced by executable rules.
+*The gap:* An unsigned development build runs, and the UI does not say so. The entry's own words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."* `runtime/ui/boot.js:37` captures `release.mode` and calls it "shown to the user under 'This runtime'", but `renderRuntime()` never receives it.
 
-*Why it is first:* It is a content gap in our own operating model, not an architectural change. It
-is written in prose that executes, in `operating-model/processes/`, so it exercises the grammar
-without touching the runtime — and it cannot break a subsystem that already passes its tests. The
-register estimates "editing three process files." Content work, same shape as #4h.
+*Why it is next:* It is a small but critical UI gap that directly affects the integrity of the signed-runtime delivery guarantees. Resolving it will make the unverified state visible, ensuring the user always knows the provenance of the code they are running.
 
-*Done when:* The three remaining process files are branched to enforce thresholds through rules, their
-stale prose notes are deleted, the files parse without errors, and the entry is moved to the closed
-part of the register with a note on how that was verified.
+*Done when:* The unverified/unsigned state is rendered properly in the UI under 'This runtime', the stale "verification is v0.2" paragraph is removed, and a test asserts that the unverified/unsigned banner/state is correctly displayed under unsigned builds.
 
 ---
 
@@ -51,14 +43,10 @@ part of the register with a note on how that was verified.
 The release blocker set — category **our shortfall** in `docs/COMPROMISES.md`. By standing rule 2,
 none of these may be in v1.0.
 
-1. **#15 rr4** — an unsigned development build runs and the UI does not say so. The entry's own
-   words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."*
-   `runtime/ui/boot.js:37` captures `release.mode` and `renderRuntime()` never receives it. A few
-   lines and a test.
-2. **#13** — `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`,
+1. **#13** — `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`,
    `label`, `description`). Business vocabulary inside the runtime is what Principles 7 and 11
    forbid. The exit path is additive: a `## Displayed by` grammar section, then one UI change.
-3. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
+2. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
    `perform({actorRoles:['managing-director']})` from any script is a managing director.
    `runtime/polism/execute.js:62` still takes the claim verbatim. This is the only one of the seven
    that is genuine engineering, and FD-9 in `docs/ROADMAP-V1.md` has already decided the fix:
