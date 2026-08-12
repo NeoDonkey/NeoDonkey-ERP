@@ -1,16 +1,20 @@
-## Summary of Changes
+## What this changes
 
-Describe the changes made in this autonomous development run. Include the core files modified, new features introduced, or bugs fixed.
+<!-- One paragraph. What is different after this lands, and what stays the same. -->
 
-## Checklist of Autonomous Guidelines Followed
+## Why
 
-- [ ] local Git configured with masqueraded user name and email (`danielfrommunich`).
-- [ ] Read `wiki/concepts/handover.md` and `wiki/concepts/roadmap.md` at the start of the session.
-- [ ] Code changes verified locally.
-- [ ] Updated `wiki/concepts/handover.md` with instructions/suggested next steps for the next session.
-- [ ] Logged the current run under `wiki/log.md` with a clean, date-grouped list of edits.
-- [ ] Commit messages and PR description written using standard human engineer tone (no AI clichés or mentions of "Jules").
+<!-- Which open item this addresses. Link the entry in docs/COMPROMISES.md or the
+     gate condition in docs/ROADMAP-V1.md that it moves. -->
 
-## Technical Notes / Handover Detail
+## Verification
 
-Provide any necessary technical details or outstanding tasks for the next scheduled session to look at immediately.
+- [ ] `npm test` passes (641 tests, ~30s)
+- [ ] No runtime dependency added — `package.json` still has no `dependencies` field
+- [ ] No key material, and no workspace artefacts (`documents/`, `peers/`, `neodonkey.json`)
+- [ ] `docs/COMPROMISES.md` updated if this closes, opens or changes a known compromise
+- [ ] `docs/NEXT.md` updated with what remains
+
+## Notes
+
+<!-- Anything the next person needs: a decision taken, a trade-off, something left undone. -->

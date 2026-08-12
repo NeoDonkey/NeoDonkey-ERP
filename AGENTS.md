@@ -1,71 +1,133 @@
-# AGENTS.md — Instructions for Autonomous Scheduled Sessions
+# Working on NeoDonkey
 
-Welcome! If you are an instance of Google Jules executing in a scheduled session, you are the sole maintainer of NeoDonkey-ERP during this run. You operate with 100% autonomy.
-
-To ensure the project moves forward seamlessly and professionally, you must strictly adhere to the following operational parameters, identity configurations, and decision-making flows.
-
----
-
-## 1. Persona & Identity (Invisible Masquerade)
-
-To maintain a highly professional, clean repository appearance where contributions look like they are coming directly from the lead developer, **it must not be visible that an AI agent is working on the project**.
-
-*   **Git Author Identity:** At the very start of your session, you **must** configure Git locally so all commits are attributed to the owner's account. Execute these commands before committing any code:
-    ```bash
-    git config --local user.name "danielfrommunich"
-    git config --local user.email "danielfrommunich@users.noreply.github.com"
-    ```
-*   **Tone & Language:** When writing commit messages, PR titles, descriptions, and comments, adopt a clean, concise, human-like engineering tone.
-    *   **NEVER** mention that you are an AI, an LLM, "Jules", or an automated agent in commit messages or public pull requests.
-    *   Write commit messages in the imperative mood (e.g., `feat: implement user registration validation`, `refactor: simplify database connection pool`).
-    *   Avoid generic AI clichés (e.g., "As an AI assistant...", "I have successfully completed..."). Write as a senior human software engineer.
+Conventions for anyone — or anything — making changes in this repository. Read this before the
+first edit. It is short on purpose; the long answers live in `docs/`.
 
 ---
 
-## 2. Startup & Decision-Making Flow
+## 1. What this repository is
 
-When your session boots, do not wait for human instructions. You must decide on your task autonomously by walking through this checklist:
+An ERP with no server, no cloud, no vendor and no dependencies. A company lives in a folder, the
+folder is a git repository, every business fact is a signed commit, and the software that runs it
+executes in the browser from the same folder.
 
-1.  **Read the LLM Wiki (OKF v0.2):**
-    *   Read `wiki/index.md` to understand the wiki's structure.
-    *   Read `wiki/concepts/handover.md` to see the current active state, the last session's accomplishments, and the suggested next steps.
-    *   Read `wiki/concepts/roadmap.md` to view the long-term backlog and priorities.
-2.  **Evaluate Tasks:**
-    *   **Priority 1:** If `wiki/concepts/handover.md` has an unfinished, high-priority task assigned to the next session, take it on immediately.
-    *   **Priority 2:** If there is no specific handover task, review `wiki/concepts/roadmap.md`. Select the next highest-priority feature, bug fix, or documentation milestone.
-    *   **Priority 3:** If the active roadmap milestones are blocked or complete, look for repository health tasks: optimize code, write tests, refactor files, or update documentation.
-3.  **Perform the Work:**
-    *   Implement your chosen changes in a clean, professional manner.
-    *   Always verify your work by running tests or verifying outputs locally.
+The project answers to three documents, in this order:
 
----
+| Document | Authority |
+|---|---|
+| `neodonkey-manifesto.md` | The constitution. Where code and manifesto disagree, the manifesto wins by default. |
+| `docs/CONTRACT.md` | The module contract and the non-negotiables. Binding. |
+| `docs/ROADMAP-V1.md` | Every foundation decision (FD-n) and why it was taken. Part 2 is the v1.0 gate. |
 
-## 3. Handover & Wrap-Up Procedure
+Two more you will need constantly: `docs/COMPROMISES.md` is the register of known debt — the only
+real failure mode this project has is a compromise that is *not* in it. `docs/READINESS.md` says
+what "done" means, and why publishable and production are different bars.
 
-Before your session terminates, you must leave a perfect "paper trail" so the next scheduled session can seamlessly pick up where you left off.
-
-You **must** execute the following steps:
-
-1.  **Update the OKF LLM Wiki:**
-    *   **Update `wiki/concepts/handover.md`:** Overwrite it with a clear description of:
-        *   The active task you worked on during this session.
-        *   What was fully completed.
-        *   What is left incomplete (if any) or any blockers encountered.
-        *   **Specific, actionable instructions/suggestions** for the next session's agent to tackle immediately.
-    *   **Update `wiki/log.md`:** Add a new log entry at the top under the current date (ISO 8601 `YYYY-MM-DD` format). Summarize your edits and creations following the OKF log pattern.
-2.  **Commit the Changes:**
-    *   Ensure your local git config is set to `danielfrommunich` as described in Section 1.
-    *   Commit both the codebase changes and your OKF Wiki updates (`wiki/concepts/handover.md` and `wiki/log.md`) in a single clean commit (or a few logical commits).
-3.  **Submit the Pull Request:**
-    *   Create a clean, descriptive pull request targeting the `main` branch.
-    *   Ensure the PR description is written professionally as a senior developer detailing what was implemented and why.
-    *   Once submitted, our `.github/workflows/auto-merge.yml` workflow will automatically handle approving and merging the PR.
+**Status: publishable, not production.** Do not add a claim to the README that the code does not
+yet support. Every sentence in it is meant to be verifiable by running something.
 
 ---
 
-## 4. Coding & Architecture Guidelines
+## 2. Non-negotiables
 
-Ensure all code contributions follow the principles outlined in our core philosophy:
-*   Keep dependencies minimal. Standardize interfaces in front of third-party libraries so they remain easily replaceable.
-*   Write modular, clean, and well-tested code.
-*   Do not leave temporary debug logs, commented-out code, or personal notes. Keep the codebase "clean as fuck".
+These come from `docs/CONTRACT.md`. Breaking one is not a trade-off to weigh; it is out of scope
+for any single change.
+
+1. **Zero runtime dependencies.** No npm packages. Not one, not "just this small one", not a dev
+   dependency that creeps into the runtime. `package.json` has no `dependencies` field and CI
+   fails if one appears. Anything we need, we write.
+2. **No build step.** The same ES modules run unmodified in Node 22+ and in the browser. Relative
+   imports, `.js` extensions, no bundler, no transpiler.
+3. **`node:*` imports only in `runtime/git/fs-node.js` and in tests.** Everywhere else, the code
+   must run in a browser.
+4. **Browser-standard primitives only:** `crypto.subtle`, `CompressionStream`, `TextEncoder`,
+   `structuredClone`. Nothing else.
+5. **Determinism.** No `Date.now()` and no `Math.random()` in core logic — time and randomness are
+   injected as `clock` and `rng`. This is what makes "same foreign event → same commit" possible
+   and what makes the tests exact.
+6. **No business vocabulary inside the runtime.** Field names, entity names and thresholds belong
+   in `operating-model/`, expressed as rules. A business word hard-coded in `runtime/` is a defect
+   (see entry #13).
+7. **Tests are `node --test` only**, in `test/*.test.js`, with zero dependencies there too.
+
+---
+
+## 3. Two things that must never happen
+
+- **Never commit key material.** No `.jwk`, `.pem`, `.key`, no release signing key, no `.env`.
+  `.gitignore` blocks these, and that is a backstop, not permission to be careless. This repository
+  is public. Do not generate a production signing key here — where the release fingerprint gets
+  published is an open decision, not a task to complete unilaterally (`COMPROMISES.md` #15 rr7).
+- **Never create a NeoDonkey workspace in this checkout.** `documents/`, `peers/` or
+  `neodonkey.json` appearing at the root means a workspace has hijacked our own git history. This
+  has happened twice, and both times it went unnoticed for days. The `.neodonkey-dev` marker and
+  the kernel guard prevent the write; `test/checkout-hygiene.test.js` catches it if they fail. Use
+  a temp directory, OPFS, or an explicit path.
+
+---
+
+## 4. Choosing what to work on
+
+1. Read `docs/NEXT.md` first. If it names a specific next item, do that one.
+2. Otherwise take the highest item from the release blocker set in `docs/COMPROMISES.md` —
+   the entries in category **our shortfall**. By standing rule, none of them may be in v1.0.
+3. If those are blocked, improve tests, close a documented gap, or correct documentation that has
+   drifted from the code.
+
+**One item per change.** A pull request that closes one register entry cleanly is worth more than
+one that touches five things. Do not refactor broadly, do not restructure directories, and do not
+rewrite subsystems that already have passing tests — this codebase is further along than a quick
+read suggests, and the parser, ledger, live layer and sync path are built and tested.
+
+If an item turns out to need a decision rather than an implementation — where something is
+published, what a number should be, which of two designs to adopt — **stop and write the question
+into `docs/NEXT.md`** instead of picking an answer.
+
+---
+
+## 5. Verifying
+
+```bash
+npm test          # 641 tests, about 30 seconds. Must be green before opening a PR.
+npm run demo      # the acceptance demo, end to end
+npm run ui        # then open http://localhost:8080
+```
+
+A change is not done because it looks right. It is done when the suite proves it, and new
+behaviour arrives with a test that fails without it. `docs/COMPROMISES.md` is explicit that
+nothing in it is asserted from a report — status is re-checked against the code.
+
+---
+
+## 6. Commits and pull requests
+
+Commits in this repository are authored under one identity. Configure it locally before
+committing:
+
+```bash
+git config --local user.name  "Daniel Pammé"
+git config --local user.email "226692358+danielfrommunich@users.noreply.github.com"
+```
+
+- Work on a branch named for the change: `feat/opening-balances`, `fix/vat-rounding`,
+  `docs/readiness-tiers`.
+- Commit messages in the imperative mood, describing what changes and why:
+  `Enforce approval thresholds as rules rather than prose`. No filler, no restating the diff, no
+  boilerplate sign-offs.
+- Open one pull request against `main` and fill in the template honestly — including what you did
+  *not* finish.
+- CI must be green. The merge is automatic once it is; nothing merges on a red build.
+
+---
+
+## 7. Before you finish
+
+Leave the repository so the next change can start without archaeology:
+
+- **`docs/NEXT.md`** — rewrite it: what was done, what remains, what is blocked, and the single
+  most useful thing to pick up next. This file is read first, so it is the one that matters.
+- **`docs/JOURNAL.md`** — add an entry at the top under today's date (`YYYY-MM-DD`), a few lines
+  on what changed.
+- **`docs/COMPROMISES.md`** — if an entry was closed, move it and record how that was *verified*.
+  If a new compromise was introduced, add it with a category, an owner and an exit path. An
+  undocumented compromise is the one thing this project treats as a real failure.

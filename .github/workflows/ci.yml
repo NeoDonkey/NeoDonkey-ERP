@@ -1,0 +1,68 @@
+name: test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 22 is the floor declared in package.json engines. If it passes here it
+      # passes above; there is nothing to install, because there is nothing to install.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Zero dependencies
+        run: |
+          node -e '
+            const pkg = require("./package.json");
+            for (const field of ["dependencies", "devDependencies", "peerDependencies",
+                                 "optionalDependencies", "bundledDependencies"]) {
+              const v = pkg[field];
+              if (v && Object.keys(v).length > 0) {
+                console.error(`package.json declares ${field}: ` + Object.keys(v).join(", "));
+                console.error("Zero runtime dependencies is a structural commitment (Principle 3),");
+                console.error("not a preference. See docs/CONTRACT.md, non-negotiable 1.");
+                process.exit(1);
+              }
+            }
+            console.log("no dependencies declared — as intended");
+          '
+          if [ -f package-lock.json ] || [ -d node_modules ]; then
+            echo "package-lock.json or node_modules present in the repository"
+            exit 1
+          fi
+
+      - name: No key material
+        run: |
+          if git ls-files | grep -Ei '\.(jwk|pem|key)$|release-key|^\.env'; then
+            echo "key material is tracked in a public repository"
+            exit 1
+          fi
+          echo "no key material tracked"
+
+      - name: No workspace in the checkout
+        run: |
+          # A workspace written into the source tree hijacks this repository's own history.
+          # It has happened twice. test/checkout-hygiene.test.js covers this too; this step
+          # makes the failure legible before the suite even starts.
+          for artefact in documents peers neodonkey.json; do
+            if git ls-files --error-unmatch "$artefact" >/dev/null 2>&1; then
+              echo "workspace artefact tracked: $artefact"
+              exit 1
+            fi
+          done
+          echo "checkout is not a workspace"
+
+      - name: Tests
+        run: npm test
