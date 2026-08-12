@@ -555,8 +555,8 @@ const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
  * The runtime is now delivered from an origin rather than a folder, which puts whoever controls
  * that origin in a position to serve different code. This screen exists so that position is
  * *checkable*: the hashes below are taken over the bytes the browser actually received, and the
- * command reproduces them with `shasum`. Signature verification against a pinned release key is
- * v0.2 — until then the first install is trust-on-first-use, and this screen says so.
+ * command reproduces them with `shasum`. Signature verification against a pinned release key
+ * ensures that updates not signed by the pinned release key are refused.
  */
 /**
  * The release gate's verdict, shown plainly — including when there is nothing to show.
@@ -580,7 +580,7 @@ function releaseBlock(release) {
         + 'acceptable for a company that keeps its books here.' }));
   }
 
-  if (mode === 'first-use' || mode === 'pinned') {
+  if (mode === 'first-use' || mode === 'verified') {
     return h.div({ class: 'notice notice-ok' },
       h.strong({ text: mode === 'first-use'
         ? 'Signing key pinned on this machine'

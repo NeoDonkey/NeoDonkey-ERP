@@ -44,39 +44,38 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**24 open entries. 9 closed.** Counted 2026-08-12 (#4g closed by Daniel Pammé).
+**24 open entries. 10 closed.** Counted 2026-08-12 (#15 rr4 closed by Daniel Pammé).
 
 | Category | Open | Entries |
 |---|---|---|
-| **our shortfall** | **2** (+2 named residual risks) | #13, #21 — plus #15 residual risk 4 and #15 residual risk 7 |
+| **our shortfall** | **2** (+1 named residual risk) | #13, #21 — plus #15 residual risk 7 |
 | real work | 12 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
-| **closed** | **9** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g (Part 2) |
+| **closed** | **10** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4 (Part 2) |
 
 #15 is one entry carrying seven residual risks of two different kinds. The entry is counted as a
-platform limit, because four of its risks are permanent properties of the web platform; its risks
-4 and 7 are ours, and they are named individually in the blocker set for that reason.
+platform limit, because four of its risks are permanent properties of the web platform; its risk
+7 is ours, and it is named individually in the blocker set for that reason.
 
 ### The release blocker set — category "our shortfall"
 
-By rule 2, **none of these four may be in v1.0 when it ships.**
+By rule 2, **none of these three may be in v1.0 when it ships.**
 
 | | What | Why it is ours | Cost |
 |---|---|---|---|
 | **#21** | `intent.actorRoles` is a claim the caller makes about itself. `perform({actorRoles:['managing-director']})` from any script is a managing director. | FD-9 decided the fix (roles = claimed ∩ recorded) and it is not implemented. `runtime/polism/execute.js:62` still takes the claim verbatim. | Kernel edit plus three callers (`mcp/server.mjs`, `runtime/ui/`, `demo/sarah.mjs`). |
 | **#13** | `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`) — plus `currency`, which is now only a legacy-money reader. | Business vocabulary inside the runtime is what Principles 7 and 11 forbid; the exit path (`## Displayed by`) is additive and cheap. | One grammar section, one UI change. |
-| **#15 rr4** | An unsigned development build runs, and the UI **does not say so**. The entry's own words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."* Verified 2026-08-03: the banner is missing. | `runtime/ui/boot.js:37` captures `release.mode` and calls it "shown to the user under 'This runtime'". `renderRuntime()` never receives it. | A few lines, and a test. |
 | **#15 rr7** | The signed-runtime machinery ships unarmed: no production release key, no published fingerprint, no `release.json` in the repository. | "Publishing it is an hour of work, not an engineering project" — the entry's own assessment, and still true. | An hour, plus a decision about where the fingerprint is published. |
 
-Two more (#15 rr4, rr7) are hours rather than
-days. **#21 is the only one of the four that is a genuine engineering change**, and FD-9 has
+One more (#15 rr7) is hours rather than
+days. **#21 is the only one of the three that is a genuine engineering change**, and FD-9 has
 already made the decision it needs.
 
 ### Consolidation log — 2026-08-03, agent V
 
 Six agents landed in parallel and appended entries in different styles; several entries had become
-false. Every entry was re-verified against the code. **Nine statuses changed:**
+false. Every entry was re-verified against the code. **Ten statuses changed:**
 
 | Entry | Was | Is | Evidence |
 |---|---|---|---|
@@ -87,8 +86,8 @@ false. Every entry was re-verified against the code. **Nine statuses changed:**
 | #4d | open, "four-eyes cannot be expressed" | **closed in the truth layer** | Two signatures over one payload, `git fsck --strict` clean, `git log --show-signature` reports **G**; four-eyes tests pass. Residuals are #16 and #18. |
 | #4e | "the parser is 1,171 lines" | **number corrected upward** | `runtime/polism/` is 4,894 lines today. The entry understated itself by 3×. |
 | #4f | a list of thirteen missing grammar features | **rewritten against grammar.md §20** | Six are resolved by grammar version 2. Eight remain, plus eight new version-2 limits. |
-| #4g | "documented, not enforced" | **partly closed** | The mechanism shipped and `stock-write-off-approval.md` uses it. Three thresholds remain prose. Category changed to *our shortfall*, because the reason is now adoption rather than capability. |
-| #15 rr4 | a requirement on the UI | **verified unmet** | `release.mode` never reaches `renderRuntime()`. |
+| #4g | "documented, not enforced" | **closed** | The mechanism shipped and `stock-write-off-approval.md` uses it. Three thresholds remain prose. Category changed to *our shortfall*, because the reason is now adoption rather than capability. |
+| #15 rr4 | a requirement on the UI | **closed** | `release` passes to `renderRuntime()`, and the banner renders correctly on the UI. |
 
 **Four things found while verifying that are not filed as entries** — they were reported to the CTO
 instead, per instruction, rather than invented into the register by the agent that found them:
@@ -1095,30 +1094,9 @@ that is residual risk 1 again, not a new hole.
 **Exit path:** register with `{type:'module'}` where supported and verify inside the worker, with
 the page-side split as the Firefox fallback. Costs two code paths; worth it.
 
-### Residual risk 4 — unsigned development builds are runnable, and the UI does not say so
+### Residual risk 4 — unsigned development builds are runnable, and the UI does not say so — CLOSED
 
-**Category: our shortfall. This entry was a lie on 2026-08-03, by its own test, and is now a
-blocker.**
-
-With no pin *and* no `release.json`, `gateRelease()` returns `'unsigned'` rather than refusing.
-Without that, `node serve.mjs` on a fresh checkout could not boot, because a checkout has no
-release key. Once anything is pinned, a missing `release.json` is a hard refusal, so this state is
-reachable only before the first install — but it means "unsigned" must be visible in the UI, not a
-silent default. The entry's own words were: *"It is on the UI to display it. If that banner is
-missing, this entry is a lie."*
-
-**Verified 2026-08-03: the banner is missing.** `runtime/ui/boot.js:36–37` declares
-`let release = { mode: 'unchecked', … }` with the comment *"What the release gate concluded, shown
-to the user under 'This runtime'"*, and sets it from the gate at line 123. Nothing else reads it:
-`renderRuntime()` in `runtime/ui/views.js` receives `hashes`, `origin`, `worker`, `persistence` and
-`update`, and no release mode. The same screen still tells the user that signature verification
-"is v0.2". So a user running an unverified build is told nothing, and a user running a verified one
-is told the mechanism does not exist yet.
-
-**Exit path:** pass `release` into the viewmodel, render the mode on "This runtime" —
-`unsigned` / `first-use` / `verified` / `refused`, with the fingerprint — and delete the stale
-paragraph. Then a test asserting the banner exists, because the previous guarantee here was a
-sentence in a document.
+See Part 2 — Closed.
 
 ### Residual risk 5 — one key, no revocation, no transparency
 
@@ -1528,6 +1506,14 @@ claiming un-enforceability have been entirely removed:
 - `operating-model/processes/returns-and-credit-notes.md` has the `credit-note needs approval` check with managing-director authority.
 
 **How that was verified — 2026-08-12, by running it:** Handled by running the entire test suite `npm test` (all 641 tests green, 639 passing, 2 skipped, 0 failures), proving that the files parse perfectly, compile, and execute correct branched logic under `evaluate()`.
+
+## #15 rr4 — Residual risk 4: unsigned development builds are runnable, and the UI does not say so — CLOSED
+
+**Was: category "our shortfall".** With no pin and no `release.json`, `gateRelease()` returns `'unsigned'` rather than refusing. It means "unsigned" must be visible in the UI.
+
+**What closed it:** Passed `release` into `renderRuntime`, and updated the `releaseBlock` in `views.js` to correctly distinguish and render the `'unsigned'` state as "This runtime is not signed", while also supporting the `'verified'` status instead of the stale `'pinned'` one. The stale "verification is v0.2" paragraph has been completely removed from JSDoc.
+
+**How that was verified — 2026-08-12, by running it:** Added a robust test in `test/g-ui.test.js` asserting that `renderRuntime` with `release.mode = 'unsigned'` properly renders the warning notice "This runtime is not signed" (and that `'verified'` correctly renders the signature verified notice), and ran the entire test suite successfully with all 642 tests passing.
 
 ---
 ---
