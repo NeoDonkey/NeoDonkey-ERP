@@ -1,0 +1,109 @@
+name: audit
+
+# The second lane. Work in this repository runs in two lanes that deliberately do not
+# overlap, because two agents editing the same files produce conflicts and duplicated
+# work rather than twice the progress:
+#
+#   lane A — docs/NEXT.md      implements entries from the release blocker set.
+#                              Touches operating-model/, runtime/, demo/, COMPROMISES.md.
+#   lane B — docs/AUDIT.md     this one. Verifies that what we claim is true, and adds
+#                              the tests that would have caught it. Touches test/ and
+#                              docs/AUDIT.md, and nothing else.
+#
+# Lane B never edits docs/COMPROMISES.md or docs/NEXT.md. It records findings in
+# docs/AUDIT.md and lane A folds them into the register. That makes the two a pipeline
+# instead of a collision.
+
+on:
+  schedule:
+    # 05:00 UTC daily — well clear of lane A, so the two never open a pull request
+    # against the same tree state.
+    - cron: '0 5 * * *'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  # Never two audit runs at once.
+  group: audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+        with:
+          model: opencode/big-pickle
+          share: false
+          prompt: |
+            You maintain lane B of the NeoDonkey repository. Read AGENTS.md first — the
+            non-negotiables in it are binding on you too. Then read docs/AUDIT.md, which
+            is your lane's backlog and the only planning file you may edit.
+
+            YOUR LANE
+
+            You verify claims and you write tests. You do NOT implement entries from the
+            release blocker set — that is lane A's work and it is running at the same time
+            as you. Concretely:
+
+              You may edit:    test/, docs/AUDIT.md
+              You must not edit: docs/COMPROMISES.md, docs/NEXT.md, docs/JOURNAL.md,
+                                 operating-model/, runtime/, demo/, .github/
+
+            If you find a defect outside your lane, do not fix it. Write it in
+            docs/AUDIT.md with file, line and evidence, and let lane A act on it.
+
+            WHAT TO DO THIS RUN
+
+            Pick ONE item from docs/AUDIT.md. If it names none, choose the highest-value
+            unverified claim you can find, in this order:
+
+            1. A sentence in README.md or docs/ that asserts behaviour. Check it against
+               the code by running something, not by reading. The register has been wrong
+               before — two entries were marked open long after the work was done — so
+               treat every claim as unverified until you have executed it.
+            2. A branch of behaviour the suite does not cover, especially a refusal path:
+               a rule that should reject something, an authority check, an invariant. A
+               guard with no test is a guard that will be removed by accident.
+            3. An error message that names a file, a line or an expectation, where that
+               reference could drift out of date without any test noticing.
+
+            RULES THAT ARE NOT TRADE-OFFS
+
+            - Zero dependencies. No npm package, none, not for testing either. Tests are
+              `node --test` in test/*.test.js with nothing imported that is not already here.
+            - Never weaken, skip or delete an existing test to make the suite pass. If you
+              believe a test is wrong, leave it and write why in docs/AUDIT.md.
+            - Never commit key material, and never create a workspace in the checkout
+              (documents/, peers/, neodonkey.json at the root).
+            - A new test must fail before your change and pass after it. If it passes both
+              ways it proves nothing — say so and pick something else.
+
+            FINISHING
+
+            Run `npm test`. It must be green: 641 tests, about 30 seconds. Then update
+            docs/AUDIT.md with what you verified, what held, what did not, and the next
+            item. Commit to a branch whose name begins with `opencode/` — for example
+            `opencode/cover-refusal-paths` — and open one pull request against main.
+
+            Keep it small. One verified claim with one test that would have caught it is
+            worth more than a broad sweep. If you find nothing worth a change, say that in
+            docs/AUDIT.md and open a pull request with only that. An honest empty run is a
+            result; an invented finding is not.
+
+            Write the pull request as a senior engineer would: what you checked, what you
+            found, what you did. No filler, no emoji, no restating the diff.
