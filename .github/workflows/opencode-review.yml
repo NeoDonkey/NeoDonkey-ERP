@@ -23,7 +23,9 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Tight on purpose. A review is minutes; anything longer is the provider answering
+    # 429 with a retryable error and the SDK retrying it until the job is killed.
+    timeout-minutes: 12
     # Never review a fork (untrusted), a draft, or this reviewer's own output.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
@@ -38,12 +40,38 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: anomalyco/opencode/github@latest
+      - name: Choose a provider that will answer
+        id: probe
+        env:
+          ZEN_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OR_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -uo pipefail
+          probe() {
+            curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              -X POST "$1" -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}" \
+              || echo 000
+          }
+          if [ -n "${ZEN_KEY:-}" ] && [ "$(probe https://opencode.ai/zen/v1/chat/completions "$ZEN_KEY" big-pickle)" = "200" ]; then
+            echo "provider=zen"              >> "$GITHUB_OUTPUT"
+            echo "model=opencode/big-pickle" >> "$GITHUB_OUTPUT"
+          elif [ -n "${OR_KEY:-}" ] && [ "$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" deepseek/deepseek-v4-flash:free)" = "200" ]; then
+            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+            echo "model=openrouter/deepseek/deepseek-v4-flash:free" >> "$GITHUB_OUTPUT"
+          else
+            echo "provider=none" >> "$GITHUB_OUTPUT"
+            echo "::notice::No provider available — this pull request goes unreviewed. It is not blocked; `test` is the gate."
+          fi
+
+      - if: steps.probe.outputs.provider != 'none'
+        uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          model: opencode/big-pickle
+          model: ${{ steps.probe.outputs.model }}
           # Public repos default to sharing the session publicly. Off.
           share: false
           use_github_token: true

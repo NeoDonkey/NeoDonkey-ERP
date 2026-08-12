@@ -1,24 +1,23 @@
 name: audit
 
-# The second lane. Work in this repository runs in two lanes that deliberately do not
-# overlap, because two agents editing the same files produce conflicts and duplicated
-# work rather than twice the progress:
+# An agent working the issue queue, restricted to the areas it has earned.
 #
-#   lane A — docs/NEXT.md      implements entries from the release blocker set.
-#                              Touches operating-model/, runtime/, demo/, COMPROMISES.md.
-#   lane B — docs/AUDIT.md     this one. Verifies that what we claim is true, and adds
-#                              the tests that would have caught it. Touches test/ and
-#                              docs/AUDIT.md, and nothing else.
+# Same rules as everyone else — AGENTS.md is binding, work is claimed with a draft pull
+# request, CI decides what merges. It takes only issues labelled area:docs, area:tests or
+# chore, until there is evidence it should have more.
 #
-# Lane B never edits docs/COMPROMISES.md or docs/NEXT.md. It records findings in
-# docs/AUDIT.md and lane A folds them into the register. That makes the two a pipeline
-# instead of a collision.
+# Resilience is the other half of this file. The provider answers 429 with a *retryable*
+# error, the SDK retries it forever, and the job squats on a runner until its timeout —
+# forty-five minutes spent on nothing, observed 2026-08-12. So: probe first, fall back to
+# a second provider, and if neither answers, stop immediately and quietly. A run that
+# cannot work should cost seconds, not an hour, and should not go red — a workflow that
+# is red for a reason nobody can act on trains everyone to ignore red.
 
 on:
   schedule:
-    # 05:00 UTC daily — well clear of lane A, so the two never open a pull request
-    # against the same tree state.
-    - cron: '0 5 * * *'
+    # Every four hours. Actions minutes are free on public repositories; the limit that
+    # bites is the provider's, which is why the probe below exists.
+    - cron: '0 */4 * * *'
   workflow_dispatch:
 
 permissions:
@@ -28,14 +27,15 @@ permissions:
   issues: write
 
 concurrency:
-  # Never two audit runs at once.
   group: audit
-  cancel-in-progress: false
+  # A run still going when the next is due is stuck, not busy. Replace it.
+  cancel-in-progress: true
 
 jobs:
   audit:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Tight on purpose. The work this does is minutes; anything longer is a retry loop.
+    timeout-minutes: 25
 
     steps:
       - uses: actions/checkout@v6
@@ -43,59 +43,100 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: anomalyco/opencode/github@latest
+      - name: Choose a provider that will answer
+        id: probe
+        env:
+          ZEN_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OR_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          set -uo pipefail
+
+          probe() {  # url, key, model → prints the HTTP status
+            curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              -X POST "$1" \
+              -H "Authorization: Bearer $2" \
+              -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}" \
+              || echo 000
+          }
+
+          if [ -n "${ZEN_KEY:-}" ]; then
+            code=$(probe https://opencode.ai/zen/v1/chat/completions "$ZEN_KEY" big-pickle)
+            echo "zen: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "provider=zen"                     >> "$GITHUB_OUTPUT"
+              echo "model=opencode/big-pickle"        >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [ "$code" = "429" ] && echo "zen is rate limited"
+          fi
+
+          if [ -n "${OR_KEY:-}" ]; then
+            code=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" deepseek/deepseek-v4-flash:free)
+            echo "openrouter: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+              echo "model=openrouter/deepseek/deepseek-v4-flash:free" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            [ "$code" = "429" ] && echo "openrouter is rate limited"
+          fi
+
+          echo "provider=none" >> "$GITHUB_OUTPUT"
+          echo "::notice::No provider available — skipping this run. The next scheduled run tries again."
+
+      - name: Run the agent
+        if: steps.probe.outputs.provider != 'none'
+        uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # AGENT_PAT if present, GITHUB_TOKEN otherwise. The distinction matters here and
           # nowhere else: a pull request opened with GITHUB_TOKEN does not trigger further
           # workflows — GitHub prevents that so automation cannot loop — so `test` would
-          # never run on this lane's pull requests and `auto-merge` would never fire. The
-          # branch would simply sit there. With a personal access token the events fire
-          # normally and this lane is as autonomous as the other one.
+          # never run on this lane's pull requests and `auto-merge` would never fire.
           GITHUB_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
         with:
-          model: opencode/big-pickle
+          model: ${{ steps.probe.outputs.model }}
           use_github_token: true
           share: false
           prompt: |
-            You maintain lane B of the NeoDonkey repository. Read AGENTS.md first — the
-            non-negotiables in it are binding on you too. Then read docs/AUDIT.md, which
-            is your lane's backlog and the only planning file you may edit.
+            You maintain the NeoDonkey-ERP repository for this session.
 
-            YOUR LANE
+            Read AGENTS.md first. It is binding: the non-negotiables, how work is claimed,
+            and how it is verified.
 
-            You verify claims and you write tests. You do NOT implement entries from the
-            release blocker set — that is lane A's work and it is running at the same time
-            as you. Concretely:
+            YOUR SCOPE
 
-              You may edit:    test/, docs/AUDIT.md
-              You must not edit: docs/COMPROMISES.md, docs/NEXT.md, docs/JOURNAL.md,
-                                 operating-model/, runtime/, demo/, .github/
+            You take issues labelled `area:docs`, `area:tests` or `chore` — and only those.
+            Other issues belong to sessions with more room; leave them claimed or unclaimed
+            as you found them.
 
-            If you find a defect outside your lane, do not fix it. Write it in
-            docs/AUDIT.md with file, line and evidence, and let lane A act on it.
+            If you find a defect outside your scope, do not fix it. Open an issue with the
+            file, the line and the evidence, label it and let someone else take it.
 
-            WHAT TO DO THIS RUN
+            CHOOSING WORK
 
-            Pick ONE item from docs/AUDIT.md. If it names none, choose the highest-value
-            unverified claim you can find, in this order:
+              gh issue list --state open --label ready
+              gh pr list --state open
 
-            1. A sentence in README.md or docs/ that asserts behaviour. Check it against
-               the code by running something, not by reading. The register has been wrong
-               before — two entries were marked open long after the work was done — so
-               treat every claim as unverified until you have executed it.
-            2. A branch of behaviour the suite does not cover, especially a refusal path:
-               a rule that should reject something, an authority check, an invariant. A
-               guard with no test is a guard that will be removed by accident.
-            3. An error message that names a file, a line or an expectation, where that
-               reference could drift out of date without any test noticing.
+            An issue referenced by an open pull request is claimed — skip it. Take the
+            highest-priority unclaimed one in your scope, and open a draft pull request
+            with "Closes #N" in the body BEFORE you start. That is how you claim it.
+
+            If nothing in your scope is available, verify instead: take a claim this
+            repository makes — in the README, in docs/, in a register entry marked closed —
+            and check it against the code by running it. The register was wrong about its
+            own contents on 2026-08-12: two entries sat open long after the work closing
+            them had landed. Treat every claim as unverified until you have executed it.
+            Then either open an issue with what you found, or add the test that would have
+            caught it.
 
             RULES THAT ARE NOT TRADE-OFFS
 
-            - Zero dependencies. No npm package, none, not for testing either. Tests are
-              `node --test` in test/*.test.js with nothing imported that is not already here.
+            - Zero dependencies. No npm package, none, not for tests either.
             - Never weaken, skip or delete an existing test to make the suite pass. If you
-              believe a test is wrong, leave it and write why in docs/AUDIT.md.
+              believe a test is wrong, leave it and say why in the pull request.
             - Never commit key material, and never create a workspace in the checkout
               (documents/, peers/, neodonkey.json at the root).
             - A new test must fail before your change and pass after it. If it passes both
@@ -103,15 +144,13 @@ jobs:
 
             FINISHING
 
-            Run `npm test`. It must be green: 641 tests, about 30 seconds. Then update
-            docs/AUDIT.md with what you verified, what held, what did not, and the next
-            item. Commit to a branch whose name begins with `opencode/` — for example
-            `opencode/cover-refusal-paths` — and open one pull request against main.
+            Run `npm test`; it must be green — 641 tests, about 30 seconds. Add an entry at
+            the top of docs/JOURNAL.md under today's date. Open one pull request against
+            main and fill in the template, including what you did not finish.
 
             Keep it small. One verified claim with one test that would have caught it is
-            worth more than a broad sweep. If you find nothing worth a change, say that in
-            docs/AUDIT.md and open a pull request with only that. An honest empty run is a
-            result; an invented finding is not.
+            worth more than a broad sweep. An honest empty run is a result; an invented
+            finding is not.
 
             Write the pull request as a senior engineer would: what you checked, what you
             found, what you did. No filler, no emoji, no restating the diff.

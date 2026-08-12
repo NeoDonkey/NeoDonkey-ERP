@@ -1,0 +1,58 @@
+name: watchdog
+
+# Cancels agent runs that are no longer making progress.
+#
+# The failure this exists for: the model provider answers 429 with a retryable error,
+# the SDK retries it forever, and the job sits burning a runner slot until its timeout.
+# Observed on 2026-08-12 — forty-five minutes spent on a task that needed five, with a
+# rate-limit error in the log the whole time and nothing produced.
+#
+# `timeout-minutes` on each job is the backstop. This is the shorter leash, because a
+# scheduled run that is already stuck should not still be stuck when the next one is due.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  reap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Cancel agent runs older than 25 minutes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          LIMIT_MINUTES=25
+          now=$(date -u +%s)
+          cancelled=0
+
+          # Only agent workflows. `test` is bounded and fast; cancelling it would hide
+          # real failures rather than stuck ones.
+          for wf in audit review opencode; do
+            ids=$(gh run list --workflow "$wf" --status in_progress \
+                    --json databaseId,createdAt \
+                    --jq '.[] | "\(.databaseId) \(.createdAt)"' || true)
+            [ -z "$ids" ] && continue
+            while read -r id created; do
+              [ -z "$id" ] && continue
+              started=$(date -u -d "$created" +%s 2>/dev/null || date -u -j -f "%Y-%m-%dT%H:%M:%SZ" "$created" +%s)
+              age=$(( (now - started) / 60 ))
+              if [ "$age" -ge "$LIMIT_MINUTES" ]; then
+                echo "cancelling $wf run $id — running for ${age} minutes"
+                gh run cancel "$id" || true
+                cancelled=$((cancelled + 1))
+              else
+                echo "$wf run $id is ${age} minutes old, leaving it"
+              fi
+            done <<< "$ids"
+          done
+
+          echo "cancelled ${cancelled} stuck run(s)"
