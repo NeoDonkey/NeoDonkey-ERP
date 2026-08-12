@@ -28,28 +28,21 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-**Close `COMPROMISES.md` #4h, and #22 falls with it.**
+**Close `COMPROMISES.md` #4g.**
 
-*The gap:* no rule anywhere promotes master data. Nothing sets an article to `active`, a supplier
-to `approved`, or an order to `confirmed`. The register records this as verified —
-`operating-model/processes/` holds 27 files and not one of them does it. Re-verify rather than
-trusting this sentence; that is the standing rule of the register.
+*The gap:* Three of the four money thresholds in the operating model are prose, not rules — even
+though the grammar has been able to enforce them since version 2 (§14 branches, §16 per-arm authority).
+One file adopted it (`stock-write-off-approval.md`), three did not. This is a content gap where
+thresholds are written down in prose but not enforced by executable rules.
 
-*Why it is first:* it is a content gap in our own operating model, not an architectural change. It
+*Why it is first:* It is a content gap in our own operating model, not an architectural change. It
 is written in prose that executes, in `operating-model/processes/`, so it exercises the grammar
 without touching the runtime — and it cannot break a subsystem that already passes its tests. The
-register estimates "three or four small process files".
+register estimates "editing three process files." Content work, same shape as #4h.
 
-*What it unblocks:* #22. The acceptance demo currently runs with `strictAuthorization: false` and
-claims all thirteen roles (`demo/sarah.mjs:61` and `:310`). It does that **only** because #4h
-leaves it no legitimate path. Once master data can be promoted by a rule, turn strict
-authorisation on and remove the blanket role claim. Two of the seven release blockers, one piece
-of work.
-
-*Done when:* the new process files parse without errors, a document can be promoted through a
-rule rather than by assertion, `demo/sarah.mjs` runs end to end with `strictAuthorization: true`,
-the suite is green, and both entries are moved to the closed part of the register with a note on
-how that was verified.
+*Done when:* The three remaining process files are branched to enforce thresholds through rules, their
+stale prose notes are deleted, the files parse without errors, and the entry is moved to the closed
+part of the register with a note on how that was verified.
 
 ---
 
@@ -58,17 +51,14 @@ how that was verified.
 The release blocker set — category **our shortfall** in `docs/COMPROMISES.md`. By standing rule 2,
 none of these may be in v1.0.
 
-1. **#4g** — three of the four money thresholds in the operating model are prose, not rules, even
-   though the grammar has enforced them since v2 (§14 branches, §16 per-arm authority). One file
-   adopted it, three did not. Editing three process files. Content work, same shape as #4h.
-2. **#15 rr4** — an unsigned development build runs and the UI does not say so. The entry's own
+1. **#15 rr4** — an unsigned development build runs and the UI does not say so. The entry's own
    words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."*
    `runtime/ui/boot.js:37` captures `release.mode` and `renderRuntime()` never receives it. A few
    lines and a test.
-3. **#13** — `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`,
+2. **#13** — `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`,
    `label`, `description`). Business vocabulary inside the runtime is what Principles 7 and 11
    forbid. The exit path is additive: a `## Displayed by` grammar section, then one UI change.
-4. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
+3. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
    `perform({actorRoles:['managing-director']})` from any script is a managing director.
    `runtime/polism/execute.js:62` still takes the claim verbatim. This is the only one of the seven
    that is genuine engineering, and FD-9 in `docs/ROADMAP-V1.md` has already decided the fix:
