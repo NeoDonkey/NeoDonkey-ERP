@@ -20,6 +20,7 @@ demo-workspace/
 # 2. Key material. Nothing here may ever reach a public repository.
 # -----------------------------------------------------------------------------
 *.jwk
+*.jwk.json
 *.pem
 *.key
 release-key*

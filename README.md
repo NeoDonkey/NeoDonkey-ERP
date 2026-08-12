@@ -51,7 +51,7 @@ decision and why.
 
 ```bash
 node demo/sarah.mjs            # Appendix X: Sarah's first weekend, end to end
-npm test                       # the full suite — 635 tests
+npm test                       # the full suite — 641 tests, about 30 seconds
 npm run ui                     # then open http://localhost:8080
 ```
 

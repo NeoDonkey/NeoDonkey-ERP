@@ -65,4 +65,9 @@ jobs:
           echo "checkout is not a workspace"
 
       - name: Tests
-        run: npm test
+        # Not `npm test`: the default runner concurrency is the core count, and several tests
+        # spawn real processes — a relay and two peers that must complete a handshake. On a
+        # two-core runner, thirty-two test files competing for those cores starve them and the
+        # sync tests fail on timing rather than on behaviour. Two at a time is slower and honest.
+        # Locally, `npm test` still uses the full machine.
+        run: node --test --test-concurrency=2 "test/*.test.js"
