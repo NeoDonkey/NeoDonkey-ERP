@@ -87,20 +87,60 @@ If you were given no lane, you are in lane A.
 
 ## 5. Choosing what to work on
 
-1. Read `docs/NEXT.md` first. If it names a specific next item, do that one.
-2. Otherwise take the highest item from the release blocker set in `docs/COMPROMISES.md` —
-   the entries in category **our shortfall**. By standing rule, none of them may be in v1.0.
-3. If those are blocked, improve tests, close a documented gap, or correct documentation that has
-   drifted from the code.
+**Issues are the queue.** More than one change is usually in flight, so a planning file cannot say
+"do this next" — two readers would take the same item and build it twice. Issues can be claimed;
+a Markdown file cannot.
 
-**One item per change.** A pull request that closes one register entry cleanly is worth more than
-one that touches five things. Do not refactor broadly, do not restructure directories, and do not
-rewrite subsystems that already have passing tests — this codebase is further along than a quick
-read suggests, and the parser, ledger, live layer and sync path are built and tested.
+### If you implement (engineer)
 
-If an item turns out to need a decision rather than an implementation — where something is
-published, what a number should be, which of two designs to adopt — **stop and write the question
-into `docs/NEXT.md`** instead of picking an answer.
+1. List open issues labelled `ready`. Ignore `needs-decision` and `blocked` entirely.
+2. List open pull requests and note which issue numbers they reference. **An issue already
+   referenced by an open pull request is taken.** Skip it.
+3. Take the highest-priority remaining one — `p1` before `p2` before `p3`. Where several are
+   equal, prefer one whose `area:` label differs from the areas the open pull requests touch, so
+   two changes are less likely to meet in the same file.
+4. **Open a draft pull request immediately, before doing the work**, with `Closes #N` in the body.
+   That is how you claim the issue: the next session sees it and moves on. A branch with no pull
+   request claims nothing.
+5. Do the work. Mark the pull request ready for review when the suite is green.
+
+If there is no `ready` issue, do not invent one. Improve test coverage, or correct documentation
+that has drifted from the code, and say in the pull request that the queue was empty.
+
+### If you specify (planning)
+
+1. **Count open issues labelled `ready`. If there are more than twenty, write none** — go and
+   verify existing ones against the code instead. A backlog that grows faster than it is worked is
+   a pile, not progress.
+2. Read the manifesto, `docs/ROADMAP-V1.md` (Part 2's ten gate conditions, Part 3's waves),
+   `docs/READINESS.md` and `docs/COMPROMISES.md`.
+3. **Decompose; do not invent.** The scope of this product is already decided in those documents.
+   Your work is turning "DATEV export" or "opening balances" into issues someone can implement —
+   not deciding whether they belong. An issue whose subject appears in none of those documents
+   should not exist.
+4. Every issue **cites its source**: a manifesto principle, a gate condition, a wave, or a register
+   entry. An issue without one will not be implemented.
+5. Every regulatory or accounting claim **cites a primary source** — the regulation, the official
+   specification, the tax authority's own documentation. Not a blog, not a forum, not a summary.
+   Research is welcome and often better than memory; unsourced research is not research.
+6. State how the issue will be **verified**: what test proves it, what command demonstrates it.
+   "Nothing in here is asserted from a report" is the register's standing rule and it applies to
+   specifications too.
+
+### What you may not decide
+
+If something is answered by **neither the manifesto nor the roadmap** — where the release
+fingerprint is published, whether a market is in scope for v1, which of two designs the project
+adopts — open an issue labelled `needs-decision` stating the question, the options and a
+recommendation, and stop. Do not answer it, and do not implement it.
+
+This is rare on purpose. *How* Polish VAT reporting works is researchable and yours to establish.
+*Whether* Poland is in v1 is not.
+
+**One item per change.** A pull request closing one issue cleanly is worth more than one touching
+five things. Do not refactor broadly, do not restructure directories, and do not rewrite
+subsystems that already have passing tests — this codebase is further along than a quick read
+suggests, and the parser, ledger, live layer and sync path are built and tested.
 
 ---
 
