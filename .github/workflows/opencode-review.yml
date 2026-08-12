@@ -1,0 +1,80 @@
+name: review
+
+# Reviews every pull request against this project's own rules. It comments; it does not
+# gate. The required check is `test` and stays that way: if this reviewer is rate-limited
+# or down, work must still be able to merge. A reviewer that can block the queue while
+# nobody is watching is worse than no reviewer.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  # One review per pull request. A new push cancels the review of the commit it replaced.
+  group: review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Never review a fork (untrusted), a draft, or this reviewer's own output.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false &&
+      !startsWith(github.event.pull_request.head.ref, 'opencode/')
+    # Never fail the pull request. This job is advice, not a gate.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: anomalyco/opencode/github@latest
+        env:
+          OPENCODE_ZEN_API_KEY: ${{ secrets.OPENCODE_ZEN_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          model: opencode/big-pickle
+          # Public repos default to sharing the session publicly. Off.
+          share: false
+          use_github_token: true
+          prompt: |
+            Review this pull request for the NeoDonkey repository. Read AGENTS.md first —
+            it states the rules this project actually answers to. Be concise and specific:
+            file and line, what is wrong, why it matters here. No praise, no summary of
+            the diff, no generic advice.
+
+            Refuse-worthy findings, in priority order. These are not style preferences;
+            each one breaks a stated commitment:
+
+            1. A dependency. Any npm package, in any dependency field, or a package-lock.
+               This project has zero dependencies as a structural commitment.
+            2. A build step, a bundler, a transpiler, or syntax that will not run
+               unmodified in both Node 22+ and a browser.
+            3. A `node:*` import anywhere except runtime/git/fs-node.js and test files.
+            4. `Date.now()` or `Math.random()` in core logic — time and randomness are
+               injected as `clock` and `rng`, and determinism is what makes the tests exact.
+            5. Business vocabulary inside runtime/ — field names, entity names, thresholds.
+               Those belong in operating-model/, expressed as rules.
+            6. Key material: .jwk, .pem, .key, .env, anything resembling a private key or
+               a signing key. This repository is public.
+            7. Workspace artefacts committed at the root: documents/, peers/, neodonkey.json.
+               These hijack the repository's own git history and it has happened twice.
+            8. A test weakened, skipped or deleted to make the suite pass.
+            9. A claim in a document that the code does not support — especially a register
+               entry in docs/COMPROMISES.md marked closed without evidence, or a README
+               sentence that is no longer true. Verify against the code rather than
+               believing the prose: it has been wrong before.
+
+            Then, briefly, real correctness bugs in the changed lines.
+
+            If you find nothing, say so in one line. Do not invent findings to look useful.

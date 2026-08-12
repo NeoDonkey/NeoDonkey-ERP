@@ -66,7 +66,26 @@ for any single change.
 
 ---
 
-## 4. Choosing what to work on
+## 4. Two lanes
+
+Work here runs in two lanes that deliberately do not overlap. More than one change in flight
+against the same files produces conflicts and duplicated work, not more progress. Know which lane
+you are in before you edit anything.
+
+| Lane | Planning file | Does | Edits |
+|---|---|---|---|
+| **A — build** | `docs/NEXT.md` | Implements entries from the release blocker set | `operating-model/`, `runtime/`, `demo/`, `docs/COMPROMISES.md`, `docs/JOURNAL.md` |
+| **B — audit** | `docs/AUDIT.md` | Verifies that what we claim is true, and writes the tests that keep it true | `test/`, `docs/AUDIT.md` |
+
+Lane B never edits the register, the build backlog or the journal. It records findings in
+`docs/AUDIT.md`; lane A folds them in and acts on them. That makes the two a pipeline rather than
+a collision. Lane A does not write to `docs/AUDIT.md`.
+
+If you were given no lane, you are in lane A.
+
+---
+
+## 5. Choosing what to work on
 
 1. Read `docs/NEXT.md` first. If it names a specific next item, do that one.
 2. Otherwise take the highest item from the release blocker set in `docs/COMPROMISES.md` —
@@ -85,7 +104,7 @@ into `docs/NEXT.md`** instead of picking an answer.
 
 ---
 
-## 5. Verifying
+## 6. Verifying
 
 ```bash
 npm test          # 641 tests, about 30 seconds. Must be green before opening a PR.
@@ -99,7 +118,7 @@ nothing in it is asserted from a report — status is re-checked against the cod
 
 ---
 
-## 6. Commits and pull requests
+## 7. Commits and pull requests
 
 Commits in this repository are authored under one identity. Configure it locally before
 committing:
@@ -120,7 +139,7 @@ git config --local user.email "226692358+danielfrommunich@users.noreply.github.c
 
 ---
 
-## 7. Before you finish
+## 8. Before you finish
 
 Leave the repository so the next change can start without archaeology:
 

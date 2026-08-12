@@ -16,14 +16,18 @@ jobs:
   queue:
     runs-on: ubuntu-latest
 
-    # Only pull requests raised from a branch in this repository by its owner. A pull
-    # request from a fork — which anyone may open, since the repository is public —
-    # never reaches this job, and could not merge if it did: forked pull requests get a
-    # read-only token.
+    # Only pull requests raised from a branch in this repository, by its owner or by an
+    # installed app. A pull request from a fork — which anyone may open, since the
+    # repository is public — never reaches this job, and could not merge if it did:
+    # forked pull requests get a read-only token.
+    #
+    # Creating a branch here requires write access, which only the owner and the apps the
+    # owner installed have. That is the trust boundary, and `test` still gates the merge:
+    # queueing a pull request is not merging it, and nothing lands on a red build.
     if: >-
-      github.actor == 'danielfrommunich' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.draft == false
+      github.event.pull_request.draft == false &&
+      (github.actor == 'danielfrommunich' || endsWith(github.actor, '[bot]'))
 
     steps:
       # No checkout: this job never needs the pull request's code, and running untrusted
