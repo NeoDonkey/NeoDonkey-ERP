@@ -8,6 +8,11 @@ happened.
 
 ## 2026-08-12
 
+- Closed compromises #4h (master data promotion paths) and #22 (permissive acceptance demo).
+  Added explicit processes for article activation, supplier approval, and purchase order confirmation
+  under `operating-model/processes/` so that master data can be promoted via governed, executable rules.
+  Updated the acceptance demo `demo/sarah.mjs` to run with `strictAuthorization: true` and only
+  the 8 roles actually held by Sarah, ensuring strict validation against the repository's rules.
 - Imported the v0.1 codebase into the repository: `runtime/`, `operating-model/`, `templates/`,
   `test/`, `docs/`, the demo and the MCP server. Until now the repository held only scaffolding.
 - Added `.github/workflows/ci.yml`: the suite as a required check, plus guards for the three

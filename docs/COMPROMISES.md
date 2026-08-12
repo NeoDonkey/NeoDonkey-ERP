@@ -44,15 +44,15 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**27 open entries. 6 closed.** Counted 2026-08-04 (#4a closed by agent SYNC).
+**25 open entries. 8 closed.** Counted 2026-08-12 (#4h and #22 closed by Daniel Pammé).
 
 | Category | Open | Entries |
 |---|---|---|
-| **our shortfall** | **5** (+2 named residual risks) | #4g, #4h, #13, #21, #22 — plus #15 residual risk 4 and #15 residual risk 7 |
+| **our shortfall** | **3** (+2 named residual risks) | #4g, #13, #21 — plus #15 residual risk 4 and #15 residual risk 7 |
 | real work | 12 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
-| **closed** | **6** | #1, #4b, #4a, #4c-bis, #4d, FD-6 (Part 2) |
+| **closed** | **8** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22 (Part 2) |
 
 #15 is one entry carrying seven residual risks of two different kinds. The entry is counted as a
 platform limit, because four of its risks are permanent properties of the web platform; its risks
@@ -60,20 +60,18 @@ platform limit, because four of its risks are permanent properties of the web pl
 
 ### The release blocker set — category "our shortfall"
 
-By rule 2, **none of these seven may be in v1.0 when it ships.**
+By rule 2, **none of these five may be in v1.0 when it ships.**
 
 | | What | Why it is ours | Cost |
 |---|---|---|---|
 | **#21** | `intent.actorRoles` is a claim the caller makes about itself. `perform({actorRoles:['managing-director']})` from any script is a managing director. | FD-9 decided the fix (roles = claimed ∩ recorded) and it is not implemented. `runtime/polism/execute.js:62` still takes the claim verbatim. | Kernel edit plus three callers (`mcp/server.mjs`, `runtime/ui/`, `demo/sarah.mjs`). |
-| **#4h** | No rule anywhere promotes master data: nothing sets an article `active`, a supplier `approved`, or an order `confirmed`. | A content gap in our own operating model. Verified: `operating-model/processes/` has 27 files and not one of them does it. | "Three or four small process files." |
-| **#22** | The acceptance demo runs with `strictAuthorization: false` and claims all thirteen roles. | It exists only because of #4h. `demo/sarah.mjs:61` and `:310`. | Closes with #4h, same day. |
 | **#4g** | Three of the four money thresholds in the operating model are prose, not rules — while the grammar has been able to enforce them since v2. | The capability shipped (§14 branches, §16 per-arm authority) and we did not adopt it. One file did; three did not. | Editing three process files. |
 | **#13** | `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`) — plus `currency`, which is now only a legacy-money reader. | Business vocabulary inside the runtime is what Principles 7 and 11 forbid; the exit path (`## Displayed by`) is additive and cheap. | One grammar section, one UI change. |
 | **#15 rr4** | An unsigned development build runs, and the UI **does not say so**. The entry's own words: *"It is on the UI to display it. If that banner is missing, this entry is a lie."* Verified 2026-08-03: the banner is missing. | `runtime/ui/boot.js:37` captures `release.mode` and calls it "shown to the user under 'This runtime'". `renderRuntime()` never receives it. | A few lines, and a test. |
 | **#15 rr7** | The signed-runtime machinery ships unarmed: no production release key, no published fingerprint, no `release.json` in the repository. | "Publishing it is an hour of work, not an engineering project" — the entry's own assessment, and still true. | An hour, plus a decision about where the fingerprint is published. |
 
-Two of the seven (#4h → #22) are one piece of work. Two more (#15 rr4, rr7) are hours rather than
-days. **#21 is the only one of the seven that is a genuine engineering change**, and FD-9 has
+Two more (#15 rr4, rr7) are hours rather than
+days. **#21 is the only one of the five that is a genuine engineering change**, and FD-9 has
 already made the decision it needs.
 
 ### Consolidation log — 2026-08-03, agent V
@@ -541,32 +539,6 @@ process files against a grammar that already works, which is why the category is
 and not *real work*.
 
 **Owner:** CTO with the operating-model owner. **Revisit:** before v1.0 — rule 2.
-
----
-
-## #4h — Master data has no promotion path
-
-**Category: our shortfall.** A content gap in our own model, and the cheapest blocker on the list.
-
-`Create article` sets `status "draft"`; `Create order` sets `"draft"`. No rule anywhere sets an
-article to `active`, a supplier to `approved`, or an order to `confirmed`. So the
-purchase-to-receipt chain cannot complete through rules alone — the acceptance demo has to promote
-master data with ungoverned updates (#22).
-
-**Verified 2026-08-03** across all 27 files in `operating-model/processes/`: the only
-`Update … with status "active"` rules are for `exchange-rate`, `ledger-account` and
-`financial-statement-line`, all added with the ledger. `article`, `supplier` and `order` still have
-no promotion rule at all. `article-onboarding.md` says so in its own notes, and explains why the
-gate that matters is at the point of sale — which is a good argument for the *article* case and no
-argument at all for `supplier` → `approved`, which `purchase-ordering.md` requires before an order
-may exist.
-
-Honest reading: this is a content gap, not an architecture gap, and it is the cheapest thing on the
-blocker list to close — three or four small process files. But it is a good illustration of why
-default-allow was dangerous: the missing rules were invisible until something tried to use them,
-and then the system helpfully did the thing anyway.
-
-**Owner:** the operating-model owner. **Revisit:** before v1.0 — rule 2, and #22 closes with it.
 
 ---
 
@@ -1423,24 +1395,6 @@ they do not hold.
 
 **Owner:** CTO. **Revisit:** Wave 2, before v1.0 — rule 2.
 
-## #22 — The acceptance demo runs permissive, deliberately and out loud
-
-**Category: our shortfall**, and it is #4h's, not the truth layer's.
-
-`demo/sarah.mjs` passes `strictAuthorization: false` and prints why. Its `prepareWorld()` promotes
-master data through ungoverned updates — no rule in the shipped model sets an article to `active`
-or a supplier to `approved` (#4h) — so under FD-7's default the demo's own setup is refused.
-#4c-bis already named this: "two defects propping each other up". Closing one exposes the other,
-which is what closing a defect is supposed to do.
-
-**Verified 2026-08-03:** `demo/sarah.mjs:61` still passes `strictAuthorization: false`, and line
-310 defines an `ALL_ROLES` array of thirteen roles that `prepareWorld()` claims wholesale — which
-is also #21 demonstrated by our own demo.
-
-**Exit path:** three or four small process files giving master data a promotion path with authority,
-after which the demo drops the option and claims one role at a time. #4h calls this the cheapest of
-the four to close.
-
 ---
 ---
 
@@ -1585,6 +1539,41 @@ cannot lose a number, because there is no between; concurrent allocations on one
 serialised, not interleaved. All pass.
 
 **Residual, open and named:** cross-peer gaplessness (#19).
+
+## #4h — Master data has no promotion path — CLOSED
+
+**Was: category "our shortfall".** No rule anywhere promoted master data: nothing set an article
+`active`, a supplier `approved`, or an order `confirmed`.
+
+**What closed it:** Three new process files were added under `operating-model/processes/`:
+- `article-activation.md`
+- `supplier-approval.md`
+- `purchase-order-confirmation.md`
+
+These define explicit promotion rules with required roles and conditions (such as food-safety
+certification for suppliers, allergen and nutrition declarations for articles, and order confirmation
+references for orders).
+
+**How that was verified — 2026-08-12, by running it:** Loaded as the seed for a fresh company in
+the acceptance demo, these rules parse without errors and execute. An attempt to violate them is
+prevented by strict authorization (FD-7 default-deny). `npm test` runs 641 tests successfully, and
+`demo/sarah.mjs` runs end to end with `strictAuthorization: true` under `node`.
+
+## #22 — The acceptance demo runs permissive, deliberately and out loud — CLOSED
+
+**Was: category "our shortfall".** The acceptance demo ran with `strictAuthorization: false` and
+claimed all thirteen roles because of the master-data promotion path gap (#4h).
+
+**What closed it:** Consequent to `#4h` being closed, the acceptance demo (`demo/sarah.mjs`) was
+updated to run under strict authorization:
+- `strictAuthorization` was flipped to `true`.
+- The blanket claim of all thirteen roles was removed, and instead only the 8 roles actually held
+  by Sarah are granted in the genesis commit (FD-9), allowing her to act with only her legitimate,
+  recorded roles.
+
+**How that was verified — 2026-08-12, by running it:** `demo/sarah.mjs` runs successfully and
+passes all end-to-end checks (including verification against real `git` and `ssh-keygen`), outputting
+"The donkey carries the load." with an exit status of 0.
 
 ---
 ---
