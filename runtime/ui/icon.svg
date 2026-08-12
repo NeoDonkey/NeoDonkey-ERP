@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NeoDonkey">
+  <title>NeoDonkey</title>
+  <rect width="512" height="512" rx="96" fill="#2f5d8c"/>
+  <!-- three commits on a chain: the whole product in one mark, no gradient, no image -->
+  <g stroke="#ffffff" stroke-width="26" stroke-linecap="round" fill="none" opacity="0.95">
+    <path d="M256 132 V 380"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="256" cy="132" r="42"/>
+    <circle cx="256" cy="256" r="42"/>
+    <circle cx="256" cy="380" r="42"/>
+  </g>
+  <g fill="#2f5d8c">
+    <circle cx="256" cy="132" r="16"/>
+    <circle cx="256" cy="256" r="16"/>
+    <circle cx="256" cy="380" r="16"/>
+  </g>
+</svg>

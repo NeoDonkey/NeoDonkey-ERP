@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="NeoDonkey">
+  <title>NeoDonkey</title>
+  <!-- maskable: the mark sits inside the safe zone (centre 80%), background bleeds to the edge -->
+  <rect width="512" height="512" fill="#2f5d8c"/>
+  <g stroke="#ffffff" stroke-width="21" stroke-linecap="round" fill="none" opacity="0.95">
+    <path d="M256 157 V 355"/>
+  </g>
+  <g fill="#ffffff">
+    <circle cx="256" cy="157" r="34"/>
+    <circle cx="256" cy="256" r="34"/>
+    <circle cx="256" cy="355" r="34"/>
+  </g>
+  <g fill="#2f5d8c">
+    <circle cx="256" cy="157" r="13"/>
+    <circle cx="256" cy="256" r="13"/>
+    <circle cx="256" cy="355" r="13"/>
+  </g>
+</svg>

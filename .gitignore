@@ -1,14 +1,35 @@
-# Local node/npm dependencies and build artifacts
-node_modules/
-dist/
-build/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# =============================================================================
+# NeoDonkey — repository hygiene
+# =============================================================================
 
-# OS-specific files
+# -----------------------------------------------------------------------------
+# 1. A NeoDonkey *workspace* must never be created in this checkout.
+#
+# These entries are what a workspace looks like. The kernel refuses to create
+# one here (see the `.neodonkey-dev` marker and the guard in runtime/kernel.js),
+# and test/checkout-hygiene.test.js fails if one appears anyway. This has
+# happened twice; both times it hijacked our own git history. Do not remove.
+# -----------------------------------------------------------------------------
+documents/
+peers/
+neodonkey.json
+release.json
+demo-workspace/
+
+# -----------------------------------------------------------------------------
+# 2. Key material. Nothing here may ever reach a public repository.
+# -----------------------------------------------------------------------------
+*.jwk
+*.pem
+*.key
+release-key*
+keys/
+.env
+.env.*
+
+# -----------------------------------------------------------------------------
+# 3. Ordinary noise
+# -----------------------------------------------------------------------------
 .DS_Store
 .DS_Store?
 ._*
@@ -17,31 +38,13 @@ yarn-error.log*
 ehthumbs.db
 Thumbs.db
 
-# IDES, Editors, and Tooling
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+
 .idea/
 .vscode/
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
 *.sw?
 .eslintcache
-.prettiercache
-
-# Local configuration/secrets (keys, keychain files, etc.)
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-keys/private_key.pem
-keys/*.private
-*.pem
-*.key
-
-# Local databases & run views
-*.db
-*.sqlite
-*.sqlite3
-db/
-local-views/

@@ -1,0 +1,30 @@
+{
+  "name": "NeoDonkey",
+  "short_name": "NeoDonkey",
+  "description": "The ERP that belongs to you. Git is the database, the browser is the runtime, your operating model is the software.",
+  "id": "./",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#2f5d8c",
+  "background_color": "#f6f7f8",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["business", "productivity", "finance"],
+  "icons": [
+    {
+      "src": "runtime/ui/icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    },
+    {
+      "src": "runtime/ui/icon-maskable.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "maskable"
+    }
+  ],
+  "_comment": "Every path here is relative and resolved against this file's own URL, so copying this folder to any origin or subdirectory works with no edit. There is deliberately not one leading slash. Icons are SVG because a build step that rasterises PNGs would violate the no-build-step non-negotiable; the cost is that iOS home-screen icons fall back to a screenshot, which is recorded in docs/COMPROMISES.md rather than papered over."
+}

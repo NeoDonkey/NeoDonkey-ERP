@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>NeoDonkey</title>
+<!--
+  Every href below is RELATIVE. Not one leading slash, anywhere in this app: that is what lets
+  the same files run from https://neodonkey.eu/, from https://erp.somecompany.de/neodonkey/ and
+  from http://localhost:8080/ with no edit and no build step. A company self-hosts by copying
+  the folder. See docs/_compromise-ui.md.
+-->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2f5d8c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="NeoDonkey">
+<link rel="apple-touch-icon" href="runtime/ui/icon.svg">
+<link rel="stylesheet" href="runtime/ui/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232f5d8c'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='14' font-weight='700' fill='white' text-anchor='middle'%3End%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<div id="app">
+  <section class="onboard" id="boot-placeholder">
+    <h1>Opening NeoDonkey…</h1>
+    <p class="muted">Loading the runtime from this repository.</p>
+  </section>
+</div>
+
+<noscript>
+  <section class="onboard">
+    <h1>NeoDonkey needs JavaScript</h1>
+    <p class="lead">The runtime <em>is</em> the JavaScript in this folder — there is no server
+    doing the work elsewhere. With scripting disabled there is nothing to run.</p>
+  </section>
+</noscript>
+
+<!--
+  A classic, inline script. Two reasons it is written this way rather than as a module:
+
+   1. It must run when the module graph does NOT. Measured in Chrome 148 and Safari 26: an
+      external `<script type="module" src>` on a file:// URL is blocked by CORS ("origin 'null'"),
+      while an inline classic script runs normally. So this is the only code that can explain
+      the failure to the person looking at the blank page.
+   2. It must not depend on anything, because the thing that failed is loading things.
+
+  See docs/_compromise-ui.md for the full measurement.
+-->
+<script>
+(function () {
+  var placeholder = document.getElementById('boot-placeholder');
+  var isFile = location.protocol === 'file:';
+
+  function esc(s) { return String(s).replace(/[<>&]/g, function (c) {
+    return c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'; }); }
+
+  function explain(title, lead, detail) {
+    if (!placeholder || !placeholder.parentNode) return;
+    placeholder.innerHTML =
+      '<h1>' + esc(title) + '</h1>' +
+      '<p class="lead">' + lead + '</p>' +
+      '<div class="onboard-note">' + detail + '</div>';
+  }
+
+  var howToRun =
+    '<h2>Double-click one file</h2>' +
+    '<p>In this same folder there is <strong>Start NeoDonkey.command</strong>. Double-click it. ' +
+    'It opens your browser on NeoDonkey and nothing else — no installation, no terminal, ' +
+    'no network. Close its window to stop.</p>' +
+    '<p class="muted">On Windows: <strong>Start NeoDonkey.bat</strong>. On Linux: ' +
+    '<code class="mono">./start-neodonkey.sh</code>. If macOS refuses to open a file you ' +
+    'downloaded, right-click it and choose Open once.</p>' +
+    '<details><summary>Or from a terminal, if you prefer</summary>' +
+    '<pre class="command-text">cd ' + esc(fileFolder()) + '\nnode serve.mjs</pre>' +
+    '<p>Then open <a href="http://127.0.0.1:8080">http://127.0.0.1:8080</a>. ' +
+    '<code class="mono">serve.mjs</code> is about a hundred lines of <code class="mono">node:http</code> ' +
+    'in this repository — no dependencies, nothing installed, and it only ever reads files.</p>' +
+    '</details>' +
+    '<h2>Why this step exists at all</h2>' +
+    '<p>Because you are holding the source. A browser will not load a program out of a folder ' +
+    'on your disk — that is a security rule, not something we can work around.</p>' +
+    '<p><strong>A NeoDonkey user never does this.</strong> They open a web address once, click ' +
+    '“Install”, and get an app with its own icon that works offline from then on. This page is ' +
+    'what the developer version looks like.</p>';
+
+  function fileFolder() {
+    if (!isFile) return '.';
+    try {
+      var p = decodeURIComponent(location.pathname).replace(/\/[^/]*$/, '');
+      return p || '.';
+    } catch (e) { return '.'; }
+  }
+
+  if (isFile) {
+    // Do not wait: we know this cannot work, and pretending to load would be a lie.
+    explain(
+      'This page has to be served, not opened from disk',
+      'You opened <code class="mono">index.html</code> directly, so the browser is treating every ' +
+      'file in this folder as a separate, untrusted origin. It refuses to load the runtime’s ' +
+      'ES modules — and it is right to. Nothing is broken; it just needs a local address.',
+      howToRun +
+      '<details open><summary>Why this is a real compromise, and not a detail</summary>' +
+      '<p>The manifesto (Appendix X) promises Sarah can double-click the HTML. On a ' +
+      '<code class="mono">file://</code> URL, Chrome and Safari both block a module script with ' +
+      '<em>“blocked by CORS policy: Cross origin requests are only supported for protocol ' +
+      'schemes: … http, https”</em>, and Chrome additionally refuses the private file system ' +
+      'with a <code class="mono">SecurityError</code>. Both were measured, not assumed. The gap ' +
+      'is written up in <code class="mono">docs/COMPROMISES.md</code> rather than hidden.</p>' +
+      '</details>');
+    return;
+  }
+
+  // Served, but the module still did not take over: wrong MIME type for .js, a 404 on a
+  // module, or a syntax error. Say which, instead of leaving a spinner running forever.
+  setTimeout(function () {
+    if (window.__NEODONKEY_BOOTED) return;
+    if (!document.getElementById('boot-placeholder')) return;
+    explain(
+      'The runtime did not start',
+      'This page loaded, but <code class="mono">runtime/ui/boot.js</code> never ran. That is ' +
+      'almost always one of three things.',
+      '<h2>What to check</h2><ol>' +
+      '<li>Open the browser console. A red <em>“Failed to load module script … MIME type”</em> ' +
+      'means the server is not sending <code class="mono">text/javascript</code> for ' +
+      '<code class="mono">.js</code>. <code class="mono">serve.mjs</code> does; many one-line ' +
+      'static servers do not.</li>' +
+      '<li>A <strong>404</strong> on any file under <code class="mono">runtime/</code> — the ' +
+      'whole module graph has to be reachable from this page’s folder.</li>' +
+      '<li>A <strong>SyntaxError</strong>, which is a bug in this repository. The console names ' +
+      'the file and line.</li>' +
+      '</ol>' + howToRun);
+  }, 2500);
+})();
+</script>
+
+<script type="module" src="runtime/ui/boot.js"></script>
+</body>
+</html>

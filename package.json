@@ -1,0 +1,16 @@
+{
+  "name": "neodonkey",
+  "version": "0.1.0",
+  "description": "The ERP that belongs to you. And to Europe. Git is the database, the browser is the runtime, your operating model is the software.",
+  "type": "module",
+  "private": true,
+  "license": "EUPL-1.2",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "demo": "node demo/sarah.mjs",
+    "ui": "node serve.mjs",
+    "start": "node serve.mjs"
+  },
+  "_comment": "Zero dependencies. Not a slogan — a structural commitment (Principle 3). There is no dependencies field and there never will be one in the core."
+}

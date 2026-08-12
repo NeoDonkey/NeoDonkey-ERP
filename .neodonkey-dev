@@ -1,0 +1,9 @@
+This directory is the NeoDonkey source checkout, not a company workspace.
+
+The kernel refuses to create a workspace here. A workspace written into the source tree
+hijacks this git repository — it happened once during v0.1 development, producing commits
+like "Sarah Weber starts a company" on top of our own history, and every source file
+showing as untracked.
+
+Use a temp directory (tests), OPFS or a folder the user picked (browser), or an explicit
+path (mcp/server.mjs, demo/sarah.mjs).
