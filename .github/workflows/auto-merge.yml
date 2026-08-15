@@ -27,7 +27,7 @@ jobs:
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false &&
-      (github.actor == 'danielfrommunich' || endsWith(github.actor, '[bot]'))
+      (github.actor == 'danielfrommunich' || endsWith(github.actor, '[bot]') || contains(github.actor, 'jules'))
 
     steps:
       # No checkout: this job never needs the pull request's code, and running untrusted

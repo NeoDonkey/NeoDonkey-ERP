@@ -176,7 +176,18 @@ nothing in it is asserted from a report — status is re-checked against the cod
 
 ---
 
-## 7. Commits and pull requests
+## 7. Autonomous Scheduled Sessions & Execution
+
+This repository is designed for **100% autonomous background execution** via Google Jules scheduled sessions.
+
+- **Zero Human-in-the-Loop:** During scheduled sessions, there is no human available to respond to messages, approve plans, or publish PRs. Do NOT wait for human confirmation, ask clarifying questions, or request plan approval.
+- **Autonomous Execution:** Independently select the next item (from `docs/NEXT.md` or issue queue), implement the change, verify with `npm test`, and finalize the work.
+- **Auto-Publish Pull Requests:** Always publish/submit the pull request at the end of the session as **ready for review** (non-draft). Do not leave PRs in draft or pending state.
+- **Auto-Merge:** Once published, `.github/workflows/auto-merge.yml` automatically queues and merges the PR once CI checks pass.
+
+---
+
+## 8. Commits and pull requests
 
 Commits in this repository are authored under one identity. Configure it locally before
 committing:
@@ -193,11 +204,12 @@ git config --local user.email "226692358+danielfrommunich@users.noreply.github.c
   boilerplate sign-offs.
 - Open one pull request against `main` and fill in the template honestly — including what you did
   *not* finish.
+- Ensure the pull request is marked **ready for review** (not draft) when work is verified, so auto-merge can process it without human intervention.
 - CI must be green. The merge is automatic once it is; nothing merges on a red build.
 
 ---
 
-## 8. Before you finish
+## 9. Before you finish
 
 Leave the repository so the next change can start without archaeology:
 

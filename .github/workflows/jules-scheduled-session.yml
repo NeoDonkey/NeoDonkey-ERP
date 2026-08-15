@@ -1,0 +1,61 @@
+name: jules-scheduled-session
+
+# Triggers autonomous Google Jules sessions via the Jules REST API using AUTO_CREATE_PR mode.
+# Runs on schedule (e.g. 3 times daily) or manually via workflow_dispatch.
+# Requires JULES_API_KEY secret to be configured in repository settings.
+
+on:
+  schedule:
+    - cron: '0 4,12,20 * * *'
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: 'Custom prompt for Jules session (optional)'
+        required: false
+        default: 'Autonomous background engineering task: Pick up the next unclaimed ready issue or item from docs/NEXT.md, implement the solution with unit tests, verify with npm test, update docs/NEXT.md and docs/JOURNAL.md, and publish the pull request ready for review.'
+
+jobs:
+  trigger-jules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Trigger Jules Session via REST API
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          CUSTOM_PROMPT: ${{ github.event.inputs.prompt }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${JULES_API_KEY:-}" ]; then
+            echo "::notice ::JULES_API_KEY secret is not set. Skipping Jules API session creation."
+            echo "To enable automated API sessions, create an API key at https://jules.google.com/settings#api and set JULES_API_KEY in repository secrets."
+            exit 0
+          fi
+
+          PROMPT="${CUSTOM_PROMPT:-Autonomous background engineering task: Pick up the next unclaimed ready issue or item from docs/NEXT.md, implement the solution with unit tests, verify with npm test, update docs/NEXT.md and docs/JOURNAL.md, and publish the pull request ready for review.}"
+          SOURCE_NAME="sources/github/${GITHUB_REPO}"
+
+          echo "Initiating Jules session for ${SOURCE_NAME} with AUTO_CREATE_PR mode..."
+
+          PAYLOAD=$(jq -n \
+            --arg prompt "$PROMPT" \
+            --arg source "$SOURCE_NAME" \
+            '{
+              prompt: $prompt,
+              sourceContext: {
+                source: $source,
+                githubRepoContext: { startingBranch: "main" }
+              },
+              automationMode: "AUTO_CREATE_PR",
+              title: "Autonomous Scheduled Task"
+            }')
+
+          RESPONSE=$(curl -s -X POST "https://jules.googleapis.com/v1alpha/sessions" \
+            -H "Content-Type: application/json" \
+            -H "x-goog-api-key: ${JULES_API_KEY}" \
+            -d "${PAYLOAD}")
+
+          echo "Response from Jules API:"
+          echo "${RESPONSE}"
