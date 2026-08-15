@@ -6,11 +6,6 @@ happened.
 
 ---
 
-## 2026-08-13
-
-- Closed compromise #21 (actorRoles self-declaration). Updated `docs/COMPROMISES.md` and `docs/NEXT.md` to reflect that FD-9 role-grounding (effective roles = claimed ∩ recorded) is fully implemented and enforced in `runtime/kernel.js` and verified by `test/roles-fd9.test.js`.
-- Rewrote the content-fact section of compromise #4f in `docs/COMPROMISES.md` to reflect that all 13 status fields in `operating-model/information/` have been converted to enums (`status: one of ...`) and verified.
-
 ## 2026-08-12
 
 - Closed compromise #15 rr4 (unsigned build visibility under "This runtime" screen). Passed `release` into `renderRuntime` and updated `releaseBlock` in `views.js` to correctly distinguish and display the unverified/unsigned state as "This runtime is not signed" (and `'verified'` correctly as verified). Added a robust test in `test/g-ui.test.js` to assert the rendering of both states.

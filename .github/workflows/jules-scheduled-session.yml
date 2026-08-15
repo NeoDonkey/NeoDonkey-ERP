@@ -29,9 +29,8 @@ jobs:
           set -euo pipefail
 
           if [ -z "${JULES_API_KEY:-}" ]; then
-            echo "::notice ::JULES_API_KEY secret is not set. Skipping Jules API session creation."
-            echo "To enable automated API sessions, create an API key at https://jules.google.com/settings#api and set JULES_API_KEY in repository secrets."
-            exit 0
+            echo "::error ::JULES_API_KEY secret is missing. Configure an API key at https://jules.google.com/settings#api and add it to repository secrets."
+            exit 1
           fi
 
           PROMPT="${CUSTOM_PROMPT:-Autonomous background engineering task: Pick up the next unclaimed ready issue or item from docs/NEXT.md, implement the solution with unit tests, verify with npm test, update docs/NEXT.md and docs/JOURNAL.md, and publish the pull request ready for review.}"
@@ -52,10 +51,18 @@ jobs:
               title: "Autonomous Scheduled Task"
             }')
 
-          RESPONSE=$(curl -s -X POST "https://jules.googleapis.com/v1alpha/sessions" \
+          RESPONSE_FILE=$(mktemp)
+          HTTP_STATUS=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" -X POST "https://jules.googleapis.com/v1alpha/sessions" \
             -H "Content-Type: application/json" \
             -H "x-goog-api-key: ${JULES_API_KEY}" \
             -d "${PAYLOAD}")
 
+          echo "HTTP Status: ${HTTP_STATUS}"
           echo "Response from Jules API:"
-          echo "${RESPONSE}"
+          cat "${RESPONSE_FILE}"
+          echo ""
+
+          if [ "${HTTP_STATUS}" -lt 200 ] || [ "${HTTP_STATUS}" -ge 300 ]; then
+            echo "::error ::Jules API request failed with HTTP status ${HTTP_STATUS}"
+            exit 1
+          fi

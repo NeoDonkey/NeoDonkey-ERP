@@ -180,10 +180,11 @@ nothing in it is asserted from a report — status is re-checked against the cod
 
 This repository is designed for **100% autonomous background execution** via Google Jules scheduled sessions.
 
-- **Zero Human-in-the-Loop:** During scheduled sessions, there is no human available to respond to messages, approve plans, or publish PRs. Do NOT wait for human confirmation, ask clarifying questions, or request plan approval.
-- **Autonomous Execution:** Independently select the next item (from `docs/NEXT.md` or issue queue), implement the change, verify with `npm test`, and finalize the work.
-- **Auto-Publish Pull Requests:** Always publish/submit the pull request at the end of the session as **ready for review** (non-draft). Do not leave PRs in draft or pending state.
-- **Auto-Merge:** Once published, `.github/workflows/auto-merge.yml` automatically queues and merges the PR once CI checks pass.
+- **Zero Human-in-the-Loop:** During scheduled sessions, there is no human available to respond to messages or approve routine plans. Work through implementation and specification tasks autonomously without pausing for feedback.
+- **Respecting Architectural Scope (§5):** Autonomous execution applies to specified items in the queue and `docs/NEXT.md`. If a task requires an architectural or scope decision not answered by the manifesto or roadmap, obey §5 ("What you may not decide"): open an issue labelled `needs-decision` describing the question, options, and recommendation, and stop cleanly. Do not invent unauthorized decisions.
+- **Autonomous Implementation:** For specified items, independently implement the solution, verify with `npm test`, update `docs/NEXT.md` and `docs/JOURNAL.md`, and complete the work.
+- **Auto-Publish Pull Requests:** When implementation is complete and verified, publish/submit the pull request marked as **ready for review** (non-draft). Do not leave PRs in draft or pending state.
+- **Auto-Merge:** Once published as ready for review, `.github/workflows/auto-merge.yml` automatically queues and merges the PR once CI checks pass.
 
 ---
 
