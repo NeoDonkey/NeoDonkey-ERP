@@ -520,6 +520,7 @@ export function operatingModelFileView({ model, path, text }) {
       name: p.name, text: p.text, line: p.source?.line ?? null,
     })) : [],
     identifiedBy: entityDef?.identifiedBy ?? null,
+    displayedBy: entityDef?.displayedBy ?? null,
     createdOnDemand: entityDef?.createdOnDemand ?? null,
     rules: rules.map((r) => ({
       text: r.text, line: r.source.line, trigger: r.trigger, authorizedBy: r.authorizedBy ?? [],

@@ -280,6 +280,10 @@ test('a document’s human label is derived: name field, then business key, then
   // pallet-audit has no name field, but it has `## Identified by reference-code`
   assert.deepEqual(displayLabel({ id: 'PA-1', 'reference-code': 'PA-1' }, audit),
     { text: 'PA-1', id: 'PA-1', from: 'key' });
+  // displayedBy section specified
+  assert.deepEqual(displayLabel({ id: 'C-1', code: 'C-100', 'company-name': 'Acme Corp' },
+    { fields: new Map([['code', { type: 'text' }], ['company-name', { type: 'text' }]]), displayedBy: ['code', 'company-name'] }),
+    { text: 'C-100 · Acme Corp', id: 'C-1', from: 'displayedBy' });
   // nothing declared to go on: the id
   assert.deepEqual(displayLabel({ id: 'X-1' }, { fields: new Map(), identifiedBy: null }),
     { text: 'X-1', id: 'X-1', from: 'id' });
@@ -329,6 +333,12 @@ test('list columns are derived from the declaration in a documented order, and c
   // a name-ish text field wins the second slot when there is one
   assert.deepEqual(columnsFor(model.entities.get('dock-slot')).map((c) => c.name),
     ['id', 'name', 'gate-number', 'active']);
+
+  // displayedBy section prioritises specified columns
+  assert.deepEqual(
+    columnsFor({ fields: new Map([['code', { name: 'code' }], ['company-name', { name: 'company-name' }]]), displayedBy: ['company-name'] }).map((c) => c.name),
+    ['id', 'company-name', 'code']
+  );
 
   assert.deepEqual(columnsFor(null), [ID_FIELD]);
   assert.equal(columnsFor(audit, { max: 2 }).length, 2);

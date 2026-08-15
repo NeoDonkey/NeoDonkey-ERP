@@ -61,7 +61,7 @@ export const AUTHORITY_OPERATIONS = ['create', 'read', 'update', 'delete'];
 
 /** Sections the runtime reads. `invariants` / `period` / `dated in` are grammar version 2. */
 export const RUNTIME_SECTIONS = [
-  'rules', 'authorized by', 'fields', 'predicates', 'identified by', 'created on demand',
+  'rules', 'authorized by', 'fields', 'predicates', 'identified by', 'displayed by', 'created on demand',
   'invariants', 'period', 'dated in',
 ];
 /** Sections that are documentation: recognised so they are not errors, then ignored. */
@@ -1527,7 +1527,7 @@ function copyCompatible(src, target) {
  * @typedef {{ name:string, text:string, conditions:Condition[],
  *             source:{file:string,line:number} }} PredicateDef
  * @typedef {{ name:string, title:string|null, fields:Map<string,FieldDef>,
- *             predicates:Map<string,PredicateDef>, identifiedBy:string[]|null,
+ *             predicates:Map<string,PredicateDef>, identifiedBy:string[]|null, displayedBy:string[]|null,
  *             createdOnDemand:boolean, source:{file:string,line:number} }} EntityDef
  * @typedef {{ name:string, title:string|null, source:{file:string,line:number} }} RoleDef
  * @typedef {{ grammarVersion:number, processes:Rule[], entities:Map<string,EntityDef>,
@@ -1594,7 +1594,7 @@ export function parseOperatingModel(files) {
     };
 
     // --- entity definitions live in information/ only
-    const entityOnly = ['fields', 'predicates', 'identified by', 'created on demand',
+    const entityOnly = ['fields', 'predicates', 'identified by', 'displayed by', 'created on demand',
       'invariants', 'period', 'dated in'];
     if (category !== 'information') {
       for (const s of sections) {
@@ -1608,7 +1608,7 @@ export function parseOperatingModel(files) {
       const def = {
         name, title,
         fields: new Map(), predicates: new Map(), invariants: new Map(),
-        identifiedBy: null, createdOnDemand: false,
+        identifiedBy: null, displayedBy: null, createdOnDemand: false,
         authority: null, period: null, datedIn: [],
         source: { file: path, line: 1 },
       };
@@ -1616,6 +1616,8 @@ export function parseOperatingModel(files) {
       if (fieldsSec) parseFields(fieldsSec, def, path, errors);
       const idSec = only('identified by');
       if (idSec) def.identifiedBy = parseIdentifiedBy(idSec, def, path, errors);
+      const dispSec = only('displayed by');
+      if (dispSec) def.displayedBy = parseDisplayedBy(dispSec, def, path, errors);
       const codSec = only('created on demand');
       if (codSec) def.createdOnDemand = parseYesNo(codSec, path, errors);
       const predSec = only('predicates');
@@ -1864,6 +1866,32 @@ function parseIdentifiedBy(section, def, file, errors) {
     if (!def.fields.has(f.name)) {
       errors.push(err(file, f.line,
         `"## Identified by" names "${f.name}", which is not a field of "${def.name}".${suggest(f.name, [...def.fields.keys()])}`,
+        f.text, def.fields.size
+          ? `one of the declared fields ${list([...def.fields.keys()])}`
+          : `a "## Fields" section declaring "${f.name}" first`));
+    }
+  }
+  return found.map((f) => f.name);
+}
+
+function parseDisplayedBy(section, def, file, errors) {
+  const found = [];
+  for (const b of bullets(section)) {
+    for (const part of b.text.split(/\s+and\s+|,\s*/i)) {
+      const nm = trimPunctuation(part.trim());
+      if (!nm) continue;
+      if (!SLUG.test(nm)) {
+        errors.push(err(file, b.n, `"${nm}" is not a valid field name.`, b.text,
+          'field names of this entity, for example: name or title'));
+        continue;
+      }
+      found.push({ name: nm, line: b.n, text: b.text });
+    }
+  }
+  for (const f of found) {
+    if (!def.fields.has(f.name)) {
+      errors.push(err(file, f.line,
+        `"## Displayed by" names "${f.name}", which is not a field of "${def.name}".${suggest(f.name, [...def.fields.keys()])}`,
         f.text, def.fields.size
           ? `one of the declared fields ${list([...def.fields.keys()])}`
           : `a "## Fields" section declaring "${f.name}" first`));

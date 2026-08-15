@@ -28,19 +28,15 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-**Close `COMPROMISES.md` #13.**
+All implementation items in the "our shortfall" category (including compromise #13) have been closed!
 
-*The gap:* `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`). Business vocabulary inside the runtime is what Principles 7 and 11 forbid.
-
-*Why it is next:* It is a direct violation of our strict architectural boundaries. The exit path is additive and cheap: a `## Displayed by` grammar section, then one UI change.
-
-*Done when:* Display names are moved out of the runtime and into the operating model where they belong, supported by a parser extension.
+The codebase now enforces strict architectural boundaries for UI field display derivation via the new `## Displayed by` POLISM grammar section, removing hardcoded business field name dependencies from the runtime logic.
 
 ---
 
 ## After that, in order
 
-No items remain in this category. All other shortfall items (including #21) have been closed, leaving only the next item (#13) and non-implementation tasks.
+No implementation items remain in the "our shortfall" release blocker set. Further work falls under non-implementation decisions (e.g. #15 rr7) or Wave 2+ / Wave 5 roadmap items.
 
 ---
 
