@@ -44,15 +44,15 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**23 open entries. 11 closed.** Counted 2026-08-13 (#21 closed by Daniel Pammé).
+**22 open entries. 12 closed.** Counted 2026-08-13 (#13 closed by Daniel Pammé).
 
 | Category | Open | Entries |
 |---|---|---|
-| **our shortfall** | **1** (+1 named residual risk) | #13 — plus #15 residual risk 7 |
+| **our shortfall** | **0** (+1 named residual risk) | #15 residual risk 7 |
 | real work | 12 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
-| **closed** | **11** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4, #21 (Part 2) |
+| **closed** | **12** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4, #21, #13 (Part 2) |
 
 #15 is one entry carrying seven residual risks of two different kinds. The entry is counted as a
 platform limit, because four of its risks are permanent properties of the web platform; its risk
@@ -60,14 +60,13 @@ platform limit, because four of its risks are permanent properties of the web pl
 
 ### The release blocker set — category "our shortfall"
 
-By rule 2, **none of these two may be in v1.0 when it ships.**
+By rule 2, **none of these may be in v1.0 when it ships.**
 
 | | What | Why it is ours | Cost |
 |---|---|---|---|
-| **#13** | `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`) — plus `currency`, which is now only a legacy-money reader. | Business vocabulary inside the runtime is what Principles 7 and 11 forbid; the exit path (`## Displayed by`) is additive and cheap. | One grammar section, one UI change. |
 | **#15 rr7** | The signed-runtime machinery ships unarmed: no production release key, no published fingerprint, no `release.json` in the repository. | "Publishing it is an hour of work, not an engineering project" — the entry's own assessment, and still true. | An hour, plus a decision about where the fingerprint is published. |
 
-One more (#15 rr7) is hours rather than
+One item (#15 rr7) is hours rather than
 days.
 
 ### Consolidation log — 2026-08-03, agent V
@@ -934,39 +933,6 @@ rather than a build step in the pipeline, which is the lesser of the two evils a
 
 ---
 
-## #13 — The UI knows five conventional field names, four of which still matter
-
-**Category: our shortfall.** Business vocabulary inside the runtime is what Principles 7 and 11
-forbid, and the exit path is additive and cheap. Rule 2 therefore applies.
-
-Views are generated from declarations, with no per-entity code anywhere — but
-`runtime/ui/fields.js` does know five field *names* by convention. **Verified 2026-08-03:** all
-five are still there and `test/g-ui.test.js` still pins exactly them ("the UI knows exactly five
-conventional field names, and no more"). What changed is that they are no longer five of a kind:
-
-* `name`, `title`, `label`, `description` — a document's human label, so a reference renders as
-  "Gate West" rather than `DOCK-1`. **These four are the shortfall.**
-* `currency` — read as a sibling of a **bare-number** `money` field, grammar v1 §10.7's workaround.
-  FD-1 made `money` one exact string token carrying its own currency, so this path is now reached
-  only by a legacy v0.1 workspace, and `fields.js` says so where it happens: *"A legacy bare number
-  from a v0.1 workspace … Principle 6 says it must still open."* Keeping it is correct — §0 forbids
-  changing what an existing folder means — so it is compatibility code rather than hidden
-  semantics, and the exit path below does not remove it.
-
-This is a small amount of hidden semantics, exactly analogous to grammar.md §11.3's admission about
-shared-field copying on `Create`. It is mitigated by being a closed set that degrades safely — an
-entity without any of them falls back to `## Identified by`, then to the id — and by
-`test/g-ui.test.js` failing if any other business field name appears in that file, so it cannot grow
-quietly into the per-entity knowledge Principle 7 forbids.
-
-**Exit path:** a declared `## Displayed by` section, the same shape as `## Identified by`. Cheap,
-additive, and it would move the four display names out of the runtime and into the operating model
-where they belong. `currency` stays as the legacy reader, and the g-ui test's count drops from five
-to one with a comment saying why.
-
-**Owner:** the UI owner with the grammar owner. **Revisit:** before v1.0 — rule 2.
-
----
 
 ## #14 — HTTP has no directory listing, so `serve.mjs` provides one
 
@@ -1490,6 +1456,14 @@ claiming un-enforceability have been entirely removed:
 **What closed it:** FD-9 in full (effective roles = claimed ∩ recorded). `runtime/kernel.js` limits roles to the intersection of those claimed and those recorded at genesis/peer-enrolment. All callers (`mcp/server.mjs`, `runtime/ui/app.js`, `demo/sarah.mjs`) have been updated to act under their recorded peer identity, and excess role claims are rejected.
 
 **How that was verified — 2026-08-13, by running it:** Proven by `test/roles-fd9.test.js` (10 tests, all green) which asserts that `perform({actorRoles:['managing-director']})` called by a recorded warehouse clerk is refused with `roles-not-held`, and that omitting claims safely defaults to the recorded roles.
+
+## #13 — The UI knows five conventional field names, four of which still matter — CLOSED
+
+**Was: category "our shortfall".** Business vocabulary inside the runtime is what Principles 7 and 11 forbid.
+
+**What closed it:** Added `## Displayed by` grammar section to POLISM grammar (`runtime/polism/grammar.md`) and `runtime/polism/parse.js`, parsing `displayedBy` field lists into `EntityDef`. Updated `displayLabel` and `columnsFor` in `runtime/ui/fields.js` to prioritize `displayedBy` over fallback conventional candidate names (`name`, `title`, `label`, `description`).
+
+**How that was verified — 2026-08-13, by running it:** Proven by `test/g-ui.test.js` asserting that `## Displayed by` is parsed from operating model files and that `displayLabel` and `columnsFor` format labels and pick columns using `displayedBy`. All 642 tests in `npm test` pass.
 
 ---
 ---

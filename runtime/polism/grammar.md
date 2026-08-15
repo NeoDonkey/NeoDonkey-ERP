@@ -89,6 +89,7 @@ section       = "## " , section-name , NEWLINE , { body-line } ;
 | `## Fields` | **runtime** | Field declarations of an entity (§2.1). `information/` only. |
 | `## Predicates` | **runtime** | Named predicates of an entity (§2.2). `information/` only. |
 | `## Identified by` | **runtime** | Business key of an entity (§2.3). `information/` only. |
+| `## Displayed by` | **runtime** | Human display fields of an entity (§2.3.1). `information/` only. |
 | `## Created on demand` | **runtime** | `yes` / `no` (§2.4). `information/` only. |
 | `## Invariants` | **runtime** | *Grammar version 2.* Conditions that must hold after any change (§12). `information/` only. |
 | `## Period` | **runtime** | *Grammar version 2.* This entity is a period: from, to, locked when (§18). `information/` only. |
@@ -103,7 +104,7 @@ operating-model/processes/goods-receipt.md:14: unknown section "## Approved by".
   Did you mean "## Authorized by"?
   Prose belongs above the first "## " section, or under a "### " subheading.
   Known sections: Rules, Authorized by, Fields, Predicates, Identified by,
-  Created on demand, Triggered by, Purpose, Notes, ...
+  Displayed by, Created on demand, Triggered by, Purpose, Notes, ...
 ```
 
 This strictness is deliberate: the parser cannot tell `## Rules for returns` (a section full of
@@ -213,6 +214,17 @@ article and location
 (Also accepted as one bullet per field.) Zero, one, or many fields; `## Identified by` is
 optional, but an entity that is the target of an `Update`/`Delete` consequent must be reachable
 by *some* declared mechanism or the rule is refused at parse time.
+
+### 2.3.1 `## Displayed by`
+
+Human display handle fields: which fields are formatted to represent a document of this entity in views and references.
+
+```
+## Displayed by
+name
+```
+
+(Also accepted as one bullet per field.) Zero, one, or many fields; `## Displayed by` is optional.
 
 ### 2.4 `## Created on demand`
 

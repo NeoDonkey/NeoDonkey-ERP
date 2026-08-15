@@ -8,6 +8,7 @@ happened.
 
 ## 2026-08-13
 
+- Closed compromise #13 (business vocabulary field names in runtime). Added `## Displayed by` grammar section to POLISM grammar (`runtime/polism/grammar.md`) and `runtime/polism/parse.js`, parsing `displayedBy` field lists into `EntityDef`. Updated `displayLabel` and `columnsFor` in `runtime/ui/fields.js` to prioritize `displayedBy` over fallback candidate names (`name`, `title`, `label`, `description`). Verified with unit tests in `test/g-ui.test.js`.
 - Closed compromise #21 (actorRoles self-declaration). Updated `docs/COMPROMISES.md` and `docs/NEXT.md` to reflect that FD-9 role-grounding (effective roles = claimed ∩ recorded) is fully implemented and enforced in `runtime/kernel.js` and verified by `test/roles-fd9.test.js`.
 - Rewrote the content-fact section of compromise #4f in `docs/COMPROMISES.md` to reflect that all 13 status fields in `operating-model/information/` have been converted to enums (`status: one of ...`) and verified.
 
