@@ -44,15 +44,15 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**24 open entries. 10 closed.** Counted 2026-08-12 (#15 rr4 closed by Daniel Pammé).
+**23 open entries. 11 closed.** Counted 2026-08-13 (#21 closed by Daniel Pammé).
 
 | Category | Open | Entries |
 |---|---|---|
-| **our shortfall** | **2** (+1 named residual risk) | #13, #21 — plus #15 residual risk 7 |
+| **our shortfall** | **1** (+1 named residual risk) | #13 — plus #15 residual risk 7 |
 | real work | 12 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
-| **closed** | **10** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4 (Part 2) |
+| **closed** | **11** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4, #21 (Part 2) |
 
 #15 is one entry carrying seven residual risks of two different kinds. The entry is counted as a
 platform limit, because four of its risks are permanent properties of the web platform; its risk
@@ -60,17 +60,15 @@ platform limit, because four of its risks are permanent properties of the web pl
 
 ### The release blocker set — category "our shortfall"
 
-By rule 2, **none of these three may be in v1.0 when it ships.**
+By rule 2, **none of these two may be in v1.0 when it ships.**
 
 | | What | Why it is ours | Cost |
 |---|---|---|---|
-| **#21** | `intent.actorRoles` is a claim the caller makes about itself. `perform({actorRoles:['managing-director']})` from any script is a managing director. | FD-9 decided the fix (roles = claimed ∩ recorded) and it is not implemented. `runtime/polism/execute.js:62` still takes the claim verbatim. | Kernel edit plus three callers (`mcp/server.mjs`, `runtime/ui/`, `demo/sarah.mjs`). |
 | **#13** | `runtime/ui/fields.js` knows four business field names by convention (`name`, `title`, `label`, `description`) — plus `currency`, which is now only a legacy-money reader. | Business vocabulary inside the runtime is what Principles 7 and 11 forbid; the exit path (`## Displayed by`) is additive and cheap. | One grammar section, one UI change. |
 | **#15 rr7** | The signed-runtime machinery ships unarmed: no production release key, no published fingerprint, no `release.json` in the repository. | "Publishing it is an hour of work, not an engineering project" — the entry's own assessment, and still true. | An hour, plus a decision about where the fingerprint is published. |
 
 One more (#15 rr7) is hours rather than
-days. **#21 is the only one of the three that is a genuine engineering change**, and FD-9 has
-already made the decision it needs.
+days.
 
 ### Consolidation log — 2026-08-03, agent V
 
@@ -463,21 +461,19 @@ refuse the data that already violates it. The exit is an offline sweep in the re
 and never silently repaired.
 
 **And one measured content fact, which is what "enumerations are closed" must not be allowed to
-hide.** The grammar gained `one of`; **thirteen `status` fields in
-`operating-model/information/` still declare `status: text`** with their vocabulary in a prose
-comment — `article`, `discount`, `location`, `credit-note`, `order`, `customer`, `supplier`,
-`order-line`, `stock-adjustment`, `invoice`, `sales-order-line`, `review-minute`, `vat-treatment`.
-The ledger entities added later do use `one of`. So the defect this entry originally named —
-*"`status: text` happily accepts a typo'd `delivrd`"* — **is fixed in the grammar and still live in
-the content.** `Update order-line with status "delivrd"` is accepted today.
+hide.** The grammar gained `one of`, and all thirteen `status` fields in `operating-model/information/`
+(`article`, `discount`, `location`, `credit-note`, `order`, `customer`, `supplier`, `order-line`,
+`stock-adjustment`, `invoice`, `sales-order-line`, `review-minute`, `vat-treatment`) have successfully
+been converted to use `status: one of ...` in the operating model. An attempt to post a typo'd status
+such as `Update order-line with status "delivrd"` is now strictly refused by name. The content-fact
+revisit is complete, while the grammar limits themselves remain open.
 
 **Two deliberate non-decisions worth keeping visible:** consequents do not cascade (justified on
 predictability and the one-event-one-commit boundary, and *not silent* — a static check warns,
 naming both files and lines, wherever a reader might expect one), and `+field` on a missing document
 is answered by the model via `## Created on demand: yes|no` rather than by the runtime guessing.
 
-**Owner:** CTO with the grammar owner. **Revisit:** the thirteen status fields immediately — that is
-content, not engineering.
+**Owner:** CTO with the grammar owner. **Revisit:** Wave 3 — the grammar limits.
 
 ---
 
@@ -1285,34 +1281,6 @@ would be theatre while the document stayed readable. **Exit path:** visibility f
 `runtime/read/`, at which point the same coverage check extends to `read` with no change to its
 shape.
 
-## #21 — `intent.actorRoles` is still a claim the caller makes about itself
-
-**Category: our shortfall.** It predates this work, this work made it conspicuous, and FD-9 has
-already decided the fix. Rule 2 applies: it may not survive a release.
-
-Signature requirements are now checked against roles **recorded in the repository**: `addPeer()`
-takes `roles`, `normalizeSigners()` prefers the peer record over anything a caller says, and a
-role-based requirement is refused outright when a signer's roles are not recorded
-(`roles-not-recorded`). Ordinary rule authorization is not. **Verified 2026-08-03**,
-`runtime/polism/execute.js:62`: `const actorRoles = Array.isArray(intent.actorRoles) ?
-intent.actorRoles : [];` — the claim, verbatim, with no intersection against anything. So
-`perform({actorRoles: ['managing-director']})` from any script, any MCP client, any browser tab is
-a managing director. `mcp/server.mjs:132` makes `actorRoles` a *required* input of its tool schema,
-which is the shape of the problem in one line.
-
-This is the original trust model — the kernel and its caller are the same process, holding the same
-signing key — and in single-operator use it costs nothing. It is not defensible the moment a
-workspace has an MCP server or a shared browser profile in front of it.
-
-**Exit path: FD-9, which is binding.** Effective roles = *claimed ∩ recorded* whenever the peer
-record carries roles. Intersection rather than replacement, because a user must be able to act with
-a subset of their authority and replacement would silently *widen* it. Consequences FD-9 states:
-`addPeer({roles})` becomes mandatory in practice, and `mcp/server.mjs`, `runtime/ui/**` and
-`demo/sarah.mjs` must each act as their operator's peer identity instead of passing role arrays
-they do not hold.
-
-**Owner:** CTO. **Revisit:** Wave 2, before v1.0 — rule 2.
-
 ---
 ---
 
@@ -1514,6 +1482,14 @@ claiming un-enforceability have been entirely removed:
 **What closed it:** Passed `release` into `renderRuntime`, and updated the `releaseBlock` in `views.js` to correctly distinguish and render the `'unsigned'` state as "This runtime is not signed", while also supporting the `'verified'` status instead of the stale `'pinned'` one. The stale "verification is v0.2" paragraph has been completely removed from JSDoc.
 
 **How that was verified — 2026-08-12, by running it:** Added a robust test in `test/g-ui.test.js` asserting that `renderRuntime` with `release.mode = 'unsigned'` properly renders the warning notice "This runtime is not signed" (and that `'verified'` correctly renders the signature verified notice), and ran the entire test suite successfully with all 642 tests passing.
+
+## #21 — `intent.actorRoles` is still a claim the caller makes about itself — CLOSED
+
+**Was: category "our shortfall".** `intent.actorRoles` was a claim the caller made about itself, allowing any caller to elevate their roles arbitrarily.
+
+**What closed it:** FD-9 in full (effective roles = claimed ∩ recorded). `runtime/kernel.js` limits roles to the intersection of those claimed and those recorded at genesis/peer-enrolment. All callers (`mcp/server.mjs`, `runtime/ui/app.js`, `demo/sarah.mjs`) have been updated to act under their recorded peer identity, and excess role claims are rejected.
+
+**How that was verified — 2026-08-13, by running it:** Proven by `test/roles-fd9.test.js` (10 tests, all green) which asserts that `perform({actorRoles:['managing-director']})` called by a recorded warehouse clerk is refused with `roles-not-held`, and that omitting claims safely defaults to the recorded roles.
 
 ---
 ---
