@@ -3,7 +3,7 @@
 Read this before starting work. Rewrite it before finishing. It is the first file anyone opens,
 so it is the one that has to be true.
 
-**Updated:** 2026-08-12
+**Updated:** 2026-08-13
 
 ---
 
@@ -40,16 +40,7 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## After that, in order
 
-The release blocker set — category **our shortfall** in `docs/COMPROMISES.md`. By standing rule 2,
-none of these may be in v1.0.
-
-1. **#21** — `intent.actorRoles` is a claim the caller makes about itself, so
-   `perform({actorRoles:['managing-director']})` from any script is a managing director.
-   `runtime/polism/execute.js:62` still takes the claim verbatim. This is the only one of the seven
-   that is genuine engineering, and FD-9 in `docs/ROADMAP-V1.md` has already decided the fix:
-   roles are the intersection of what is claimed and what the repository records. A kernel edit
-   plus three callers (`mcp/server.mjs`, `runtime/ui/`, `demo/sarah.mjs`). Take this one when the
-   easier four are done, not first.
+No items remain in this category. All other shortfall items (including #21) have been closed, leaving only the next item (#13) and non-implementation tasks.
 
 ---
 
