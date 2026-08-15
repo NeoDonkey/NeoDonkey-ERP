@@ -224,7 +224,8 @@ Human display handle fields: which fields are formatted to represent a document 
 name
 ```
 
-(Also accepted as one bullet per field.) Zero, one, or many fields; `## Displayed by` is optional.
+(Also accepted as one bullet per field, or multiple fields joined by `and` / `,`.) Optional;
+when omitted, display labels fall back to `## Identified by` fields, then to the document id.
 
 ### 2.4 `## Created on demand`
 

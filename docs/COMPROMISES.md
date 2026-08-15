@@ -1428,9 +1428,13 @@ claiming un-enforceability have been entirely removed:
 
 **Was: category "our shortfall".** Business vocabulary inside the runtime is what Principles 7 and 11 forbid.
 
-**What closed it:** Added `## Displayed by` grammar section to POLISM grammar (`runtime/polism/grammar.md`) and `runtime/polism/parse.js`, parsing `displayedBy` field lists into `EntityDef`. Updated `displayLabel` and `columnsFor` in `runtime/ui/fields.js` to prioritize `displayedBy` over fallback conventional candidate names (`name`, `title`, `label`, `description`).
+**What closed it, in two parts.** The grammar landed first (#33): a `## Displayed by` section in `runtime/polism/grammar.md` and `runtime/polism/parse.js`, parsing `displayedBy` into `EntityDef`, with `displayLabel` and `columnsFor` preferring it over the conventional names.
 
-**How that was verified — 2026-08-13, by running it:** Proven by `test/g-ui.test.js` asserting that `## Displayed by` is parsed from operating model files and that `displayLabel` and `columnsFor` format labels and pick columns using `displayedBy`. All 642 tests in `npm test` pass.
+That was not enough, and this entry claimed closure for two days while it was still open — recorded here because the register being wrong about itself is the failure this project treats as real (#44). Preferring `displayedBy` over a fallback leaves the fallback in place, and nothing populated `displayedBy`: not one file in `operating-model/information/` declared the section, so every lookup still reached the hardcoded list.
+
+The adoption is what actually closed it (#29): `## Displayed by` declared in the twelve information files, the eight `d2c-retail-europe` templates and `runtime/ui/starter-model.js`, and the `['name', 'title', 'label', 'description']` loop **deleted** from `runtime/ui/fields.js`. `currency` remains, as grammar §10.7's own documented workaround for money carrying no currency.
+
+**How that was verified — by running it, and by a test that could not pass before.** `test/g-ui.test.js` pinned the runtime's conventional vocabulary at five names; it now pins it at one, and the assertion is `'the UI knows exactly one conventional field name, and no more'` with `CONVENTIONAL = ['currency']`. That test fails against the code as it stood on 2026-08-13 and passes now, which is the difference between this closure and the previous one. `displayLabel` returns `from: 'displayedBy'` where it used to return `from: 'name'`.
 
 ## #4a — The Live Layer has no IndexedDB buffer — CLOSED, with a named deviation
 

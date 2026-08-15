@@ -48,6 +48,7 @@ plan, which most do not.
 
 ## 2026-08-12
 
+- Closed compromise #13 (business vocabulary in runtime display candidates). Added `## Displayed by` section to the POLISM grammar and parser (`runtime/polism/parse.js`), updated all 12 operating model information files, 8 template files, and `starter-model.js` to declare display fields, and removed hardcoded display candidates (`['name', 'title', 'label', 'description']`) from `runtime/ui/fields.js`. `fields.js` now hardcodes only `'currency'` as the legacy reader.
 - Closed compromise #15 rr4 (unsigned build visibility under "This runtime" screen). Passed `release` into `renderRuntime` and updated `releaseBlock` in `views.js` to correctly distinguish and display the unverified/unsigned state as "This runtime is not signed" (and `'verified'` correctly as verified). Added a robust test in `test/g-ui.test.js` to assert the rendering of both states.
 - Closed compromise #4g (threshold authorisation content adoption). Checked operating-model process files and verified that they have all successfully adopted branched `when ... then ... otherwise` rules to enforce the 10,000 € purchase order, 10 % discount, and 100 € credit-note limits, and removed stale prose comments.
 - Closed compromises #4h (master data promotion paths) and #22 (permissive acceptance demo).

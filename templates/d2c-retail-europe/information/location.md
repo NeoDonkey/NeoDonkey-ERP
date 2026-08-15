@@ -32,6 +32,9 @@ obligation lives nowhere.
 ## Identified by
 id
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

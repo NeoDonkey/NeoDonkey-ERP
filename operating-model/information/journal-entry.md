@@ -56,6 +56,9 @@ happens, and a *Storno* is a full entry with its own number, its own signature a
 ## Identified by
 entry-number
 
+## Displayed by
+description
+
 ## Created on demand
 no
 

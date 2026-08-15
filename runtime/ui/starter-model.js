@@ -46,6 +46,9 @@ legal entity and not the person who happens to send the order.
 - credit-limit: money — how much open receivable we accept from this customer
 - blocked: boolean — set when sales must stop, for any reason
 
+## Displayed by
+name
+
 ## Predicates
 - blocked for business: blocked is true
 ## Authorized by
@@ -69,6 +72,9 @@ name the batch.
 - net-weight-grams: number
 - batch-managed: boolean — true for every food article
 - status: text — draft, active, discontinued
+## Displayed by
+name
+
 ## Authorized by
 - create: category-manager or managing-director
 - update: category-manager or managing-director
@@ -85,6 +91,9 @@ A place where stock physically lies, or from which we ship.
 - name: text required
 - country: text required
 - kind: text — warehouse, fulfilment, office, webshop
+## Displayed by
+name
+
 ## Authorized by
 - create: managing-director
 - update: managing-director

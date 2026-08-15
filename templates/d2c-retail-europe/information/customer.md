@@ -43,6 +43,9 @@ addresses, contact details — does not belong in a template that is published a
 ## Identified by
 name
 
+## Displayed by
+name
+
 ## Created on demand
 no
 
