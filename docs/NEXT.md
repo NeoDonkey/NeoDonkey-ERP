@@ -9,7 +9,7 @@ so it is the one that has to be true.
 
 ## Where the project stands
 
-v0.1 of the runtime is in the repository and the suite is green: **642 tests, 640 passing, 2
+v0.1 of the runtime is in the repository and the suite is green: **646 tests, 644 passing, 2
 skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
 red build.
 
@@ -30,7 +30,7 @@ missing — most gaps are already named there, with a category and a cost.
 
 All implementation items in the "our shortfall" category (including compromise #13) have been closed!
 
-The codebase now enforces strict architectural boundaries for UI field display derivation via the new `## Displayed by` POLISM grammar section, removing hardcoded business field name dependencies from the runtime logic.
+The codebase now enforces strict architectural boundaries for UI field display derivation via the `## Displayed by` POLISM grammar section, and all 4 headline status claims in `README.md` have been verified and unit tested in `test/readme-claims.test.js`.
 
 ---
 

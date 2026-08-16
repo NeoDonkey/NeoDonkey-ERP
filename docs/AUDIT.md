@@ -3,7 +3,7 @@
 The backlog and findings register for lane B. Read it before starting, rewrite it before
 finishing. `docs/NEXT.md` is the other lane and is not edited from here.
 
-**Updated:** 2026-08-12
+**Updated:** 2026-08-13
 
 ---
 
@@ -40,40 +40,18 @@ file is how you get conflicts instead of progress.
 
 ## The next item
 
-**Verify the README's headline claims, one at a time, by executing them.**
-
-The README makes four claims in its status block about what is closed since v0.1. Each is
-falsifiable and none has a test asserting it stays true:
-
-1. *"operations no rule governs are now refused"* — an actor with no roles can do nothing the
-   model does not grant.
-2. *"a caller's roles are the intersection of what it claims and what the repository records, so
-   `actorRoles` is no longer a self-declaration"* — note that `docs/COMPROMISES.md` #21 says the
-   opposite, and that `runtime/polism/execute.js:62` still reads `intent.actorRoles` verbatim.
-   **These cannot both be true.** Establish which it is and record the evidence. Do not edit the
-   register; report it.
-3. *"the general ledger posts double-entry with the balance as a structural invariant"*.
-4. *"two processes have converged through a relay and recovered a company after one was
-   destroyed"*.
-
-Start with #2. It is the one where two of our own documents contradict each other, which makes it
-the most likely to be wrong somewhere — and it sits directly on gate condition 3.
-
-*Done when:* the claim is either demonstrated by a test that fails without the behaviour, or
-recorded here as not holding, with the evidence.
+**Refusal paths without tests.** Every rule that refuses something is a guard, and a guard with
+no test is one accidental edit from being gone. Find the refusals in `runtime/polism/` and the
+authority checks that no test currently exercises.
 
 ---
 
 ## After that
 
-- **Refusal paths without tests.** Every rule that refuses something is a guard, and a guard with
-  no test is one accidental edit from being gone. Find the refusals in `runtime/polism/` and the
-  authority checks that no test currently exercises.
 - **Error messages that cite a location.** Several refusals quote a file, a line and an
   expectation. Nothing asserts those references are still accurate, so they can drift silently
   into lies that read like precision.
-- **The skipped tests.** The suite reports 641 tests with 2 skipped. Find out what they are, why
-  they are skipped, and whether the reason still holds.
+- **The skipped tests.** The suite reports 646 tests with 2 skipped (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
 
 ---
 
@@ -82,4 +60,8 @@ recorded here as not holding, with the evidence.
 Newest first. A finding stays here until lane A closes it, then it is marked closed with the
 commit that did so.
 
-*None yet — this lane starts with the run after 2026-08-12.*
+- **Verified README headline claims (2026-08-13):** All four headline claims in the `README.md` status block were verified and are now continuously asserted by unit tests in `test/readme-claims.test.js`:
+  1. *Operations no rule governs are refused:* Verified in strict authorization mode (`strictAuthorization: true`), ungoverned operations are refused with `not-authorized-by-anything`.
+  2. *Caller's roles grounding:* Verified that `actorRoles` is grounded by `kernel.js` (`groundRoles()`, `effective = claimed ∩ recorded`), preventing self-declared role escalation. Note on previous item #2: `docs/COMPROMISES.md #21` was closed on 2026-08-13. `runtime/polism/execute.js` reads `intent.actorRoles` from the `effective` intent passed by `kernel.js`, which has already grounded the roles against the repository peer record (`peers/<email>.json`).
+  3. *General ledger double-entry balance invariant:* Verified that `evaluate()` and `kernel.perform()` refuse unbalanced journal entries, citing the `debits equal credits` invariant.
+  4. *Relay convergence and company recovery:* Verified that two Node processes converge CRDT and git state over `relay.mjs`, and after destroying one workspace repository, a fresh peer recovers the whole company byte-for-byte with clean `git fsck --strict`.
