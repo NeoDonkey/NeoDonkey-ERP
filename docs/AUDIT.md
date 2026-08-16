@@ -40,18 +40,15 @@ file is how you get conflicts instead of progress.
 
 ## The next item
 
-**Refusal paths without tests.** Every rule that refuses something is a guard, and a guard with
-no test is one accidental edit from being gone. Find the refusals in `runtime/polism/` and the
-authority checks that no test currently exercises.
+**Error messages that cite a location.** Several refusals quote a file, a line and an
+expectation. Nothing asserts those references are still accurate, so they can drift silently
+into lies that read like precision.
 
 ---
 
 ## After that
 
-- **Error messages that cite a location.** Several refusals quote a file, a line and an
-  expectation. Nothing asserts those references are still accurate, so they can drift silently
-  into lies that read like precision.
-- **The skipped tests.** The suite reports 646 tests with 2 skipped (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
+- **The skipped tests.** The suite reports 657 tests with 2 skipped (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
 
 ---
 
@@ -59,6 +56,8 @@ authority checks that no test currently exercises.
 
 Newest first. A finding stays here until lane A closes it, then it is marked closed with the
 commit that did so.
+
+- **Verified POLISM refusal paths and authority checks (2026-08-13):** Comprehensive unit tests were added to `test/c-polism.test.js` exercising previously untested refusal paths in `runtime/polism/execute.js` and `runtime/polism/parse.js`, including invalid operation strings, entity-scope authority refusals when no process rule governs the operation (`matching.length === 0`), staged change validation failures in step 8 of `evaluate()` (missing required fields, invalid enum values, or non-exact money strings), predicate recursion depth limits (> 32), same-event create/delete and delete/change conflicts, self-targeting update refusals, create-on-demand key missing refusals, whole-document comparison diagnostics, missing referenced document `from` path copy/add refusals, and non-number/non-money counter refusals.
 
 - **Verified README headline claims (2026-08-13):** All four headline claims in the `README.md` status block were verified and are now continuously asserted by unit tests in `test/readme-claims.test.js`:
   1. *Operations no rule governs are refused:* Verified in strict authorization mode (`strictAuthorization: true`), ungoverned operations are refused with `not-authorized-by-anything`.

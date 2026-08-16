@@ -3202,3 +3202,191 @@ test('§17/§21 FD-5 items 8 and 9 are normative in grammar.md, and version 2 st
   assert.match(spec, /^grammar-version: 2$/m);
   assert.equal(GRAMMAR_VERSION, 2);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Refusal paths and authority checks coverage (Audit Lane B)
+// ---------------------------------------------------------------------------------------------
+
+test('refusal path — invalid intent.op operation string is refused by name', () => {
+  const model = parseOk(baseFiles());
+  const r = evaluate(model, { op: 'archive', entity: 'goods-receipt', id: 'GR-1', doc: {}, actorRoles: [] }, makeWorld(WORLD_DOCS()));
+  assert.equal(r.ok, false);
+  assert.equal(r.violations.length, 1);
+  assert.match(r.violations[0].reason, /"archive" is not one of the four operations \(Create, Read, Update, Delete\)/);
+});
+
+test('refusal path — entity-scope authority refusal when no process rule governs the operation', () => {
+  const model = parseOk(ledgerFiles());
+  // Delete ledger-account has no process rule in ledgerFiles, but ledger-account.md specifies:
+  // ## Authorized by
+  // - delete: controller
+  // Accountant attempts to delete a ledger-account:
+  const r = evaluate(model, {
+    op: 'delete', entity: 'ledger-account', id: '1200', doc: {}, actorRoles: ['accountant'],
+  }, makeWorld(LEDGER_WORLD()));
+
+  assert.equal(r.ok, false);
+  assert.equal(r.violations.length, 1);
+  assert.match(r.violations[0].reason, /someone whose role is "accountant" may not delete a ledger-account/);
+  assert.match(r.violations[0].reason, /operating-model\/information\/ledger-account\.md:\d+ says:\n    ## Authorized by\n    - delete: controller/);
+});
+
+test('refusal path — staged change validation failures in step 8 of evaluate', () => {
+  // 1. Required field missing on staged change created by consequent
+  const reqModel = parseOk(baseFiles({
+    'operating-model/information/order.md': '# Order\n\n## Fields\n- ordered-quantity: number required\n- delivered-quantity: number\n- status: text\n',
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Create order as "created-po"'),
+  }));
+  const rReq = evaluate(reqModel, receipt(), makeWorld(WORLD_DOCS()));
+  assert.equal(rReq.ok, false);
+  assert.match(rReq.violations[0].reason, /"ordered-quantity" must be filled in on every order, but order "GR-0001-created-po" would have none/);
+
+  // 2. Invalid enum value on update intent
+  const enumModel = parseOk(baseFiles({
+    'operating-model/information/order-line.md': '# Order line\n\n## Fields\n- order: reference to order\n- status: one of open, delivered\n',
+    [PROCESS]: null,
+  }));
+  const rEnum = evaluate(enumModel, {
+    op: 'update', entity: 'order-line', id: 'PO-77-1', doc: { status: 'invalid-enum' }, actorRoles: [],
+  }, makeWorld(WORLD_DOCS()));
+  assert.equal(rEnum.ok, false);
+  assert.match(rEnum.violations[0].reason, /"status" on order-line "PO-77-1" is "invalid-enum", which is not one of the values a order-line may have/);
+
+  // 3. Invalid money string on staged change
+  const moneyModel = parseOk(baseFiles({
+    'operating-model/information/goods-receipt.md': '# Goods receipt\n\n## Fields\n- quantity: money required\n- article: reference to article\n- location: reference to location\n',
+    'operating-model/information/stock.md': '# Stock\n\n## Fields\n- article: reference to article\n- location: reference to location\n- quantity: money\n\n## Identified by\narticle and location\n',
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Update stock with quantity from quantity'),
+  }));
+  const rMoney = evaluate(moneyModel, receipt({ quantity: '12.345 EUR' }), makeWorld(WORLD_DOCS()));
+  assert.equal(rMoney.ok, false);
+  assert.match(rMoney.violations[0].reason, /"quantity" on goods-receipt "GR-0001" is not an exact amount/);
+});
+
+test('refusal path — predicate depth limit refusal (> 32 deep)', () => {
+  // Build a chain of 33 predicates on goods-receipt itself: p1 calls p2 calls ... p33
+  let preds = '# Goods receipt\n\n## Fields\n- quantity: number required\n- article: reference to article\n- location: reference to location\n\n## Predicates\n';
+  for (let i = 1; i <= 33; i++) {
+    preds += `- p${i}: ${i < 33 ? `goods-receipt p${i + 1}` : 'quantity > 0'}\n`;
+  }
+  const model = parseOk(baseFiles({
+    'operating-model/information/goods-receipt.md': preds,
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Create goods-receipt under condition goods-receipt p1 then Delete stock'),
+  }));
+
+  const r = evaluate(model, receipt(), makeWorld(WORLD_DOCS()));
+  assert.equal(r.ok, false);
+  assert.match(r.violations[0].reason, /defined through more than 32 other predicates/);
+});
+
+test('refusal path — consequent conflict refusals (create and delete, or delete and change in same event)', () => {
+  // 1. Create on demand (which stages 'create') and then delete in same event
+  const createDeleteModel = parseOk(baseFiles({
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Update stock with +quantity and Delete stock'),
+  }));
+  // Provide world with no existing stock so update stock creates on demand
+  const docsNoStock = WORLD_DOCS().filter((d) => d.entity !== 'stock');
+  const rCD = evaluate(createDeleteModel, receipt(), makeWorld(docsNoStock));
+  assert.equal(rCD.ok, false);
+  assert.match(rCD.violations[0].reason, /stock "cashew-1kg-berlin-main" is created and deleted by the same event, which cannot both be true/);
+
+  // 2. Delete and change the same document in same event
+  const deleteChangeModel = parseOk(baseFiles({
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Delete order-line and Update order-line with status "delivered"'),
+  }));
+  const rDC = evaluate(deleteChangeModel, receipt(), makeWorld(WORLD_DOCS()));
+  assert.equal(rDC.ok, false);
+  assert.match(rDC.violations[0].reason, /order-line "PO-77-1" is deleted and changed by the same event, which cannot both be true/);
+});
+
+test('refusal path — self-targeting update refusal when document does not exist', () => {
+  const model = parseOk(baseFiles({
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Update order then Update order with status "closed"'),
+  }));
+
+  // Attempting to update an order that is missing in world:
+  const r = evaluate(model, {
+    op: 'update', entity: 'order', id: 'PO-MISSING', doc: { status: 'open' }, actorRoles: ['warehouse-clerk'],
+  }, makeWorld(WORLD_DOCS()));
+
+  assert.equal(r.ok, false);
+  assert.match(r.violations[0].reason, /there is no order with the id "PO-MISSING", so it cannot be updated/);
+});
+
+test('refusal path — createOnDemand refusal when business key field is missing', () => {
+  const model = parseOk(baseFiles({
+    [PROCESS]: null,
+    'operating-model/information/stock.md': `# Stock\n\n## Fields\n- article: reference to article\n- location: reference to location\n- quantity: number\n\n## Identified by\narticle\n\n## Created on demand\nyes\n`,
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Update stock with +quantity'),
+  }));
+
+  // Trigger goods-receipt has an empty article field
+  const emptyArticleReceipt = receipt({ article: '' });
+  const r = evaluate(model, emptyArticleReceipt, makeWorld([]));
+  assert.equal(r.ok, false);
+  assert.match(r.violations[0].reason, /finds the right stock by its article, but no article is filled in on this goods-receipt/);
+});
+
+test('refusal path — comparison diagnostic when subject or value path resolves to a whole document', () => {
+  // Comparing a reference field (which points to a document) directly with a value is caught at parse time
+  const { errors } = parseOperatingModel(baseFiles({
+    [TEST_PROCESS]: processFile('If Create goods-receipt under condition article = "Cashews 1kg" then Delete stock'),
+  }));
+
+  const d = errorsOf(errors).find((e) => e.file === TEST_PROCESS);
+  assert.ok(d, 'comparing a whole document produced a diagnostic');
+  assert.match(d.message, /"article" is a whole article document, not a single value/);
+});
+
+test('refusal path — copy/add clause refusal when referenced document in from path is missing', () => {
+  const model = parseOk(baseFiles({
+    [PROCESS]: null,
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Update stock with +quantity from order.ordered-quantity'),
+  }));
+
+  // Trigger refers to non-existent order
+  const r = evaluate(model, receipt({ order: 'PO-404' }), makeWorld(WORLD_DOCS()));
+  assert.equal(r.ok, false);
+  assert.match(r.violations[0].reason, /"Update stock with \+quantity from order\.ordered-quantity" reads order\.ordered-quantity of this goods-receipt, but there is no order with the id "PO-404"/);
+});
+
+test('refusal path — non-number and non-money field refusals in counter consequents', () => {
+  // 1. Source field is text in doc ("batch-number"), trying to add it as counter
+  const model = parseOk(baseFiles({
+    [PROCESS]: null,
+    'operating-model/information/goods-receipt.md': '# Goods receipt\n\n## Fields\n- quantity: number required\n- batch-number: number\n- article: reference to article\n- location: reference to location\n- order: reference to order\n- order-line: reference to order-line\n',
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Update stock with +quantity from batch-number'),
+  }));
+  const rText = evaluate(model, receipt({ 'batch-number': 'NOT_A_NUMBER' }), makeWorld(WORLD_DOCS()));
+  assert.equal(rText.ok, false);
+  assert.match(rText.violations[0].reason, /adds the batch-number of this goods-receipt to stock "ST-1", but its batch-number is "NOT_A_NUMBER", which is not a number/);
+
+  // 2. Target field in world has text value, trying to add number to it
+  const numModel = parseOk(baseFiles({
+    [PROCESS]: null,
+    'operating-model/information/stock.md': '# Stock\n\n## Fields\n- article: reference to article\n- location: reference to location\n- quantity: number\n\n## Identified by\narticle and location\n',
+    [TEST_PROCESS]: processFile('If Create goods-receipt then Update stock with +quantity'),
+  }));
+  const worldWithTextStock = makeWorld([
+    ...WORLD_DOCS().filter((d) => d.id !== 'ST-1'),
+    { id: 'ST-1', entity: 'stock', article: 'cashew-1kg', location: 'berlin-main', quantity: 'TEXT_QUANTITY' },
+  ]);
+  const rTarget = evaluate(numModel, receipt(), worldWithTextStock);
+  assert.equal(rTarget.ok, false);
+  assert.match(rTarget.violations[0].reason, /stock "ST-1" has quantity "TEXT_QUANTITY", which is not a number, so it cannot be counted up/);
+});
+
+test('refusal path — parse errors for invalid section placement and syntax errors in parse.js', () => {
+  // Unknown section in process file
+  const badProcSec = parseOperatingModel(baseFiles({
+    [TEST_PROCESS]: '# Test\n\n## Rules\nIf Create goods-receipt then Delete stock\n\n## Fields\n- x: text\n',
+  }));
+  const dSec = badProcSec.errors.find((e) => /describes a kind of document, so it belongs in an "information\/" file/.test(e.message));
+  assert.ok(dSec, 'invalid section in process file produced diagnostic');
+});
