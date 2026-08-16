@@ -25,6 +25,9 @@ import { parseOperatingModel } from '../runtime/polism/parse.js';
 import { relay } from '../relay.mjs';
 import { createIntroduction } from '../runtime/sync/introduce.js';
 import { platformRandomBytes, hex } from '../runtime/sync/sealed.js';
+import { canonicalManifestBytes, verifyRelease, RELEASE_NAMESPACE } from '../runtime/release/manifest.js';
+import { memoryStore, pinKey, gateRelease } from '../runtime/release/pin.js';
+import { signPayload } from '../runtime/identity/sshsig.js';
 
 const REPO_ROOT = fileURLToPath(new URL('..', import.meta.url));
 const enc = new TextEncoder();
@@ -455,4 +458,55 @@ test('README Claim 4: two processes converge through relay and recover company a
   for (const [path, body] of expected) {
     assert.equal(git(newLaptopDir, 'show', `HEAD:${path}`), body);
   }
+});
+
+// =============================================================================================
+// Claim 5: Signed Runtime: release manifest verification and key pinning enforce structural sovereignty
+// =============================================================================================
+
+test('Signed Runtime: release manifest verification and key pinning enforce structural sovereignty', async () => {
+  const releaseKeyPair = await generateIdentity({ comment: 'release-key@neodonkey.eu' });
+  const publicSsh = await exportPublicSsh(releaseKeyPair, 'release-key@neodonkey.eu');
+
+  const rawManifest = {
+    schema: 1,
+    product: 'neodonkey',
+    version: '1.0.0',
+    key: publicSsh,
+    files: [
+      { path: 'runtime/kernel.js', sha256: 'a'.repeat(64), bytes: 1024 },
+      { path: 'runtime/polism/parse.js', sha256: 'b'.repeat(64), bytes: 2048 },
+    ],
+  };
+
+  const payload = canonicalManifestBytes(rawManifest);
+  const signature = await signPayload(releaseKeyPair, payload, RELEASE_NAMESPACE);
+  const signedManifest = { ...rawManifest, signature };
+
+  // 1. Direct verification against expected key
+  const verified = await verifyRelease(signedManifest, publicSsh);
+  assert.equal(verified.ok, true, 'Validly signed release manifest must verify');
+  assert.equal(verified.version, '1.0.0');
+
+  // 2. Gating before key pinning -> mode is 'first-use'
+  const store = memoryStore();
+  const firstUseGate = await gateRelease(store, signedManifest);
+  assert.equal(firstUseGate.mode, 'first-use', 'First encounter with signed release must report first-use mode');
+
+  // 3. Pin key and verify gate -> mode is 'verified'
+  await pinKey(store, publicSsh, { at: 1_780_000_000_000, note: 'Initial release key pin' });
+  const pinnedGate = await gateRelease(store, signedManifest);
+  assert.equal(pinnedGate.mode, 'verified', 'Gate must report verified once key is pinned');
+
+  // 4. Tampered manifest (altered file hash) -> mode is 'refused'
+  const tamperedManifest = {
+    ...signedManifest,
+    files: [
+      { path: 'runtime/kernel.js', sha256: 'f'.repeat(64), bytes: 1024 },
+      { path: 'runtime/polism/parse.js', sha256: 'b'.repeat(64), bytes: 2048 },
+    ],
+  };
+  const tamperedGate = await gateRelease(store, tamperedManifest);
+  assert.equal(tamperedGate.mode, 'refused', 'Tampered manifest must be refused by release gate');
+  assert.equal(tamperedGate.reason, 'bad-signature');
 });

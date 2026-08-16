@@ -163,8 +163,8 @@ WebAuthn/passkeys, which is the exit path for COMPROMISES #2 — signing keys in
 behind Touch ID, which is what Appendix IV actually demands and `file://` can never deliver. Our
 worst cryptographic compromise is unfixable without this change.
 
-**Residual risk, stated plainly:** first install is trust-on-first-use. Until key pinning ships
-(v0.2), a compromised origin on day one is undetectable.
+**Residual risk, stated plainly:** first install is trust-on-first-use. Until out-of-band release
+key verification or pinning occurs, a compromised origin on day one is undetectable.
 
 ## What v0.1 deliberately does not do
 
