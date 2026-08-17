@@ -70,3 +70,40 @@ test('AGENTS.md still instructs sessions to create a file rather than append', (
     'AGENTS.md §9 no longer names the journal entry path that this test enforces. Whichever one is '
     + 'right, they must match: agents read AGENTS.md, and CI runs this file.');
 });
+
+// ---------------------------------------------------------------------------------------------
+// Decision records, same shape and for the same reason.
+//
+// A session that needs a regulatory fact researches it and writes the answer down here rather
+// than opening an issue and stopping (AGENTS.md §6). One file per decision, for the same reason
+// journal entries are one file per change: three sessions run at once and nothing rebases.
+//
+// The naming is enforced because the alternative is a prose convention, and a prose convention in
+// this repository has a half-life of about a week once nobody is watching.
+// ---------------------------------------------------------------------------------------------
+
+const DECISIONS = new URL('docs/decisions/', root);
+
+test('every decision record is its own dated file, named so the directory sorts chronologically', () => {
+  assert.ok(existsSync(DECISIONS),
+    'docs/decisions/ does not exist. A session that researches a regulatory question records the '
+    + 'answer there — see AGENTS.md §6. If the directory is gone, the convention has been dropped '
+    + 'and sessions will go back to asking a human who is not reading.');
+
+  const bad = readdirSync(DECISIONS).filter((f) => f !== '.gitkeep' && !ENTRY.test(f));
+  assert.deepEqual(bad, [],
+    'These files in docs/decisions/ are not named `YYYY-MM-DD-short-slug.md`:\n'
+    + bad.map((f) => `  ${f}`).join('\n'));
+});
+
+test('a decision record names its source, not only its conclusion', () => {
+  // The whole basis for letting a session decide is that it read something authoritative. A
+  // record without a source is worse than the question it replaced, because it looks settled.
+  for (const file of readdirSync(DECISIONS).filter((f) => ENTRY.test(f))) {
+    const text = readFileSync(new URL(file, DECISIONS), 'utf8');
+    assert.match(text, /##\s+(Why|Source)/i,
+      `docs/decisions/${file} has no "## Why" or "## Source" section. A decision recorded without `
+      + 'the reasoning and the primary source behind it cannot be reviewed or overturned, which is '
+      + 'the only thing that makes deciding-without-asking safe. See AGENTS.md §6.');
+  }
+});
