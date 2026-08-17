@@ -78,6 +78,7 @@ jobs:
         run: |
           # Not `set -o pipefail` + fail here. The next step decides, because a failure whose
           # only casualty is a known flake must not stop the queue — see test/known-flaky.txt.
+          set +e +o pipefail
           node --test --test-concurrency=2 "test/*.test.js" 2>&1 | tee "${RUNNER_TEMP}/suite.txt"
           echo "rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
@@ -140,16 +141,10 @@ jobs:
           printf '%s\n' "$failing"
           echo "Continuing. This is a recorded compromise — see docs/COMPROMISES.md and #46."
 
-      - name: The documented suite size matches the suite
-        # The other half of test/documented-counts.test.js. That test proves the documents
-        # agree with each other; only this step can prove they agree with reality, because a
-        # test cannot count the run it is part of.
-        #
-        # This is the check that was missing for five days while README.md said 641, docs/NEXT.md
-        # said 658, and the suite ran 661. The audit lane found it eleven times and could not
-        # land the fix; nothing automated ever compared the two numbers.
-        #
-        # Adding a test fails this step until the documents are corrected. That is intended.
+      - name: The suite size meets or exceeds the floor in test/suite-floor.txt
+        # Compares the run against the floor in test/suite-floor.txt (Issue #55).
+        # Adding tests no longer requires changing documentation, preventing PR conflicts.
+        # Removing tests below the floor fails loudly.
         shell: bash
         run: |
           set -euo pipefail
@@ -164,18 +159,16 @@ jobs:
             exit 1
           fi
 
-          documented=$(grep -oE '[0-9]{3,5} tests' README.md | head -1 | grep -oE '^[0-9]+')
-
-          if [ "$ran" != "$documented" ]; then
-            echo "The suite ran ${ran} tests. The documents claim ${documented}."
-            echo
-            echo "Update every one of these to ${ran}, then push again:"
-            grep -nE '[0-9]{3,5} tests' README.md AGENTS.md docs/NEXT.md docs/AUDIT.md \
-              .github/pull_request_template.md .github/workflows/opencode-audit.yml || true
-            echo
-            echo "docs/NEXT.md also states the passing and skipped split; keep it consistent."
-            echo "Do NOT edit docs/JOURNAL.md or docs/COMPROMISES.md to match: their numbers are"
-            echo "dated observations, and rewriting them destroys the evidence they carry."
+          floor_file="test/suite-floor.txt"
+          if [ ! -f "$floor_file" ]; then
+            echo "Floor file $floor_file missing!"
             exit 1
           fi
-          echo "documented suite size (${documented}) matches the suite as run"
+          floor=$(tr -d '[:space:]' < "$floor_file")
+
+          if [ "$ran" -lt "$floor" ]; then
+            echo "The suite ran ${ran} tests, which is below the floor of ${floor} set in ${floor_file}."
+            echo "If tests were intentionally removed, update ${floor_file}."
+            exit 1
+          fi
+          echo "suite ran ${ran} tests, meeting or exceeding floor (${floor} from ${floor_file})"

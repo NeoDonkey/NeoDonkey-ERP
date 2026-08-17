@@ -40,7 +40,7 @@ file is how you get conflicts instead of progress.
 
 ## The next item
 
-**The skipped tests.** The suite reports 669 tests with 2 skipped (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
+**The skipped tests.** The suite reports 2 skipped tests (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
 
 ---
 
