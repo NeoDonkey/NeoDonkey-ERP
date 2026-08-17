@@ -387,7 +387,14 @@ jobs:
             fi
             if [ "$mins" -ge "$GRACE_MINUTES" ]; then
               echo "#${n}: ${mins} minutes with no verdict — releasing on \`test\`"
-              # No `|| true`. This is the release valve, and a valve that fails quietly is the
+              # Label it BEFORE merging, so what merged unreviewed is answerable later with a
+              # search rather than by reading every pull request. The comment alone was not
+              # enough: this valve is the one place the project's quality bar drops to "the
+              # tests passed", and over a fortnight of provider rate limits that could be a
+              # dozen changes. Nobody can audit a decision they cannot enumerate, and the
+              # daily state report lists these first for exactly that reason.
+              gh pr edit "$n" --repo "$GH_REPO" --add-label 'merged:unreviewed' || true
+              # No `|| true` on the merge itself. This is the release valve, and a valve that fails quietly is the
               # same as no valve — which is exactly what happened while this file ran with
               # `contents: read`: the merge was refused, the failure was swallowed, and the run
               # still counted the pull request as acted on and exited green.

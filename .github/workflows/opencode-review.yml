@@ -203,8 +203,30 @@ jobs:
                entry in docs/COMPROMISES.md marked closed without evidence, or a README
                sentence that is no longer true. Verify against the code rather than
                believing the prose: it has been wrong before.
+            10. A compromise taken and not written down. A hardcoded value that should come
+               from the operating model, a case handled for the happy path only, a TODO, a
+               narrowed test, an error swallowed, a "for now". Any of those is acceptable
+               work — this project ships real trade-offs — but ONLY if the pull request adds
+               it to docs/COMPROMISES.md with a category, a cost and an exit path.
+               AGENTS.md is unambiguous: "the only real failure mode this project has is a
+               compromise that is *not* in it." An undocumented shortcut is the one thing
+               here that compounds, because the next session cannot see it and builds on top.
+               Judge what the diff actually does, not what its description claims.
 
             Then, briefly, real correctness bugs in the changed lines.
+
+            WHERE TO HOLD THE BAR
+
+            This repository is aiming at a product with no compromises it has not chosen
+            deliberately, built by sessions nobody is watching. Two failure modes, and they
+            are not symmetrical.
+
+            Refusing good work costs three relay rounds and a parked pull request — bad, and
+            recoverable by a human in a minute. Passing a silent compromise costs a defect
+            that the next session builds on and nobody can see. **When genuinely uncertain
+            about anything touching money, authorisation, signatures, the ledger, or a claim
+            a reader would rely on, refuse and say why.** Elsewhere — naming, structure,
+            style, a tidier way to write the same thing — pass it and say the nit.
 
             If you find nothing, say so in one line. Do not invent findings to look useful.
 

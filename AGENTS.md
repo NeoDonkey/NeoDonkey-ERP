@@ -117,7 +117,9 @@ which job you took and why.
 
 ### If you implement (engineer)
 
-1. List open issues labelled `ready`. Ignore `needs-decision` and `blocked` entirely.
+1. List open issues labelled `ready`. Ignore `needs-decision`, `blocked` and `meta` entirely.
+   (`meta` is a generated report — see the daily *State of the project* issue. It is not work,
+   and anything written into it is overwritten the next morning.)
 2. List open pull requests and note which issue numbers they reference. **An issue already
    referenced by an open pull request is taken.** Skip it.
 3. Take the highest-priority remaining one — `p1` before `p2` before `p3`. Where several are
