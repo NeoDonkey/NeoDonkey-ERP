@@ -9,7 +9,7 @@
 
 ## Verification
 
-- [ ] `npm test` passes (666 tests, ~30s)
+- [ ] `npm test` passes (669 tests, ~30s)
 - [ ] No runtime dependency added — `package.json` still has no `dependencies` field
 - [ ] No key material, and no workspace artefacts (`documents/`, `peers/`, `neodonkey.json`)
 - [ ] `docs/COMPROMISES.md` updated if this closes, opens or changes a known compromise
