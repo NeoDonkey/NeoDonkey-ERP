@@ -126,7 +126,7 @@ about Polish VAT than an afternoon of reading does.
 **A regulatory, accounting or standards question is yours.** Research it, cite a primary source per
 `docs/SPECIFYING.md` §2 — the regulation, the official specification, the tax authority's own
 documentation, with the article or field that applies — then decide and write it down as a new file
-in `docs/decisions/YYYY-MM-DD-short-slug.md`: the question, the answer, the source, and what would
+in a new file in `docs/decisions/`, named `YYYY-MM-DD-short-slug.md`: the question, the answer, the source, and what would
 have to change for the answer to change. One file per decision, so parallel sessions never collide.
 
 Where sources genuinely disagree, say so in the record, implement the reading you can defend, and

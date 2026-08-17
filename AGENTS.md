@@ -156,7 +156,7 @@ method, what a year-end close must assert, which fields EN-16931 makes mandatory
 authoritative sources and are not anybody's preference. Research them on the web, cite a primary
 source per `docs/SPECIFYING.md` §2, and decide.
 
-Record the decision as a **new file**, `docs/decisions/YYYY-MM-DD-short-slug.md`: the question,
+Record the decision as a **new file** in `docs/decisions/`, named `YYYY-MM-DD-short-slug.md`: the question,
 the answer, the source with its article or field, and what would have to change for the answer to
 change. One file per decision, so parallel sessions never collide — the same reason journal
 entries moved (§9). Where sources genuinely disagree, say so, implement the reading you can
