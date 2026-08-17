@@ -338,39 +338,7 @@ detect wrong business semantics.
 
 ### #4a — The Live Layer has no IndexedDB buffer — CLOSED, with a named deviation
 
-**Closed 2026-08-04 by agent SYNC.** `runtime/sync/opbuffer.js` persists `session.ops()` and
-replays it through `session.receive()`, the same idempotent path a peer's frames take. Proven the
-only way that means anything: a **child process** types into a delivery note, persists, and calls
-`process.exit(0)`; a fresh session in the parent restores the buffer and holds a **byte-identical**
-op set and snapshot. `test/sync-opbuffer.test.js`, 10 tests.
-
-**Two things the old entry asked for that needed more than `ops()`:**
-
-* **The quarantine.** The entry's first sentence was about ops a `reject` policy quarantined. Those
-  are recorded in `violations()` and deliberately create no register, so they are **not** in
-  `session.ops()` — persisting `ops()` alone would have lost precisely the thing named first. The
-  record therefore carries a second list, and replay feeds it back through `receive()`, which
-  re-reaches the same verdict from the same base document. Two violation kinds cannot be replayed
-  because they keep no op (`immutable-field`, `crdt-type-mismatch`); `restore()` counts them rather
-  than pretending.
-* **Refusing a stale buffer.** An op set is only meaningful against the document it was produced
-  against, so the record carries a digest of the committed base. If the document has been committed
-  or pulled since, `restore()` returns `stale` and **keeps the record** — deleting a human's unsaved
-  work because we could not use it would be the data loss the file exists to prevent.
-
-**DEVIATION FROM APPENDIX III'S WORDING, deliberate:** it is not IndexedDB. The buffer lives at
-`.git/neodonkey-live/` behind the same `FsAdapter` that holds the company (`fs-opfs.js` in a
-browser, `fs-node.js` for a CLI or an always-on peer). One storage story instead of two, it works
-everywhere the repo works, and — the reason that decided it — it is testable in Node, so this is
-verified rather than asserted. IndexedDB and OPFS share a browser storage bucket and are evicted
-together, so nothing is given up in durability; `kvStore` is an injected interface, so an IndexedDB
-implementation can be added without touching anything above it. Inside `.git/` on purpose: anywhere
-else and `git status` would report the buffer as untracked, which would break Appendix X's "it is
-simply a folder". Asserted with the real `git` binary, before and after a commit.
-
-**Residual:** no UI calls `track()` or `restore()` yet, so a user is not yet *told* "you have
-unsaved work on three documents" — `pending()` answers that question and nothing asks it. Folded
-into #4 item 3 (the same missing UI work), not counted as a separate entry.
+See Part 2 — Closed.
 
 ### #4c — Policy divergence between peers on different operating models
 
@@ -1463,6 +1431,21 @@ claiming un-enforceability have been entirely removed:
 **What closed it:** Added `## Displayed by` grammar section to POLISM grammar (`runtime/polism/grammar.md`) and `runtime/polism/parse.js`, parsing `displayedBy` field lists into `EntityDef`. Updated `displayLabel` and `columnsFor` in `runtime/ui/fields.js` to prioritize `displayedBy` over fallback conventional candidate names (`name`, `title`, `label`, `description`).
 
 **How that was verified — 2026-08-13, by running it:** Proven by `test/g-ui.test.js` asserting that `## Displayed by` is parsed from operating model files and that `displayLabel` and `columnsFor` format labels and pick columns using `displayedBy`. All 642 tests in `npm test` pass.
+
+## #4a — The Live Layer has no IndexedDB buffer — CLOSED, with a named deviation
+
+**Was: category "our shortfall".** The Live Layer had no buffer for ops produced while offline.
+
+**What closed it:** `runtime/sync/opbuffer.js` persists `session.ops()` and replays it through `session.receive()`, the same idempotent path a peer's frames take. Proven the only way that means anything: a **child process** types into a delivery note, persists, and calls `process.exit(0)`; a fresh session in the parent restores the buffer and holds a **byte-identical** op set and snapshot. `test/sync-opbuffer.test.js`, 10 tests.
+
+**Two things the old entry asked for that needed more than `ops()`:**
+
+* **The quarantine.** The entry's first sentence was about ops a `reject` policy quarantined. Those are recorded in `violations()` and deliberately create no register, so they are **not** in `session.ops()` — persisting `ops()` alone would have lost precisely the thing named first. The record therefore carries a second list, and replay feeds it back through `receive()`, which re-reaches the same verdict from the same base document. Two violation kinds cannot be replayed because they keep no op (`immutable-field`, `crdt-type-mismatch`); `restore()` counts them rather than pretending.
+* **Refusing a stale buffer.** An op set is only meaningful against the document it was produced against, so the record carries a digest of the committed base. If the document has been committed or pulled since, `restore()` returns `stale` and **keeps the record** — deleting a human's unsaved work because we could not use it would be the data loss the file exists to prevent.
+
+**DEVIATION FROM APPENDIX III'S WORDING, deliberate:** it is not IndexedDB. The buffer lives at `.git/neodonkey-live/` behind the same `FsAdapter` that holds the company (`fs-opfs.js` in a browser, `fs-node.js` for a CLI or an always-on peer). One storage story instead of two, it works everywhere the repo works, and — the reason that decided it — it is testable in Node, so this is verified rather than asserted. IndexedDB and OPFS share a browser storage bucket and are evicted together, so nothing is given up in durability; `kvStore` is an injected interface, so an IndexedDB implementation can be added without touching anything above it. Inside `.git/` on purpose: anywhere else and `git status` would report the buffer as untracked, which would break Appendix X's "it is simply a folder". Asserted with the real `git` binary, before and after a commit.
+
+**Residual:** no UI calls `track()` or `restore()` yet, so a user is not yet *told* "you have unsaved work on three documents" — `pending()` answers that question and nothing asks it. Folded into #4 item 3 (the same missing UI work), not counted as a separate entry.
 
 ---
 ---

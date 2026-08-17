@@ -203,7 +203,7 @@ jobs:
 
             FINISHING
 
-            Run `npm test`; it must be green — 664 tests, about 30 seconds. If you added or
+            Run `npm test`; it must be green — 666 tests, about 30 seconds. If you added or
             removed a test, the total changed: update it in README.md, AGENTS.md,
             docs/NEXT.md, docs/AUDIT.md, the pull request template and this workflow, or
             `ci.yml` fails and names every file for you.
