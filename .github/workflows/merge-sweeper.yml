@@ -7,8 +7,12 @@ name: merge-sweeper
 # because the repository is unattended for days at a time and a pull request nobody can act
 # on is indistinguishable from a project that has stopped.
 #
-# Four things rot here, and each has a deadline:
+# Five things rot here, and each has a deadline:
 #
+#   0. A red build nobody was told about.  `review` only relays a CHANGES_REQUIRED verdict, so
+#      until 2026-08-17 a failing `test` reached no one — #49 was reviewed, came back CLEAN,
+#      and sat with a red build that the session which wrote it never heard about. The failing
+#      output goes to that session now, immediately, once per failing commit.
 #   1. No verdict.  The provider was down, the runner was lost, the reviewer crashed. Nothing
 #      enabled auto-merge and nothing blocked it. After GRACE_MINUTES the pull request is
 #      released on `test` alone. This is the release valve that lets `review` hold the queue
@@ -30,7 +34,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # `contents: write` is required to queue a merge — `mergePullRequest` and
+  # `enablePullRequestAutoMerge` are both refused without it, with the unhelpfully generic
+  # "Resource not accessible by integration". This file had `contents: read` from the moment
+  # it was written, inherited from the reviewer it was split out of, so from 2026-08-17 the
+  # release valve silently did nothing: #48 was correctly identified as 77 minutes past its
+  # grace, tried to merge, failed, and the run still reported "swept: 2 pull request(s) acted
+  # on" because the call was wrapped in `|| true`.
+  #
+  # This is safe here in a way it would not be in `review`: this job has no checkout and never
+  # runs a line of anybody's code. That is the same reason the deleted auto-merge.yml held a
+  # write token and refused to check anything out.
+  contents: write
   pull-requests: write
   issues: write
 
@@ -55,6 +70,8 @@ jobs:
           # applied the label, posted a comment saying it had drafted #29, and left the pull
           # request open. A user token can do it, so try that first and fall back.
           AGENT_PAT: ${{ secrets.AGENT_PAT }}
+          # For relaying a red build back to the session that wrote it.
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           # How long a pull request waits for a review verdict before it merges without one.
           # Long enough that a review in progress is never overtaken — the reviewer's own
           # timeout is 12 minutes — and short enough that a dead provider costs an hour, not
@@ -68,6 +85,7 @@ jobs:
           set -uo pipefail
           now=$(date -u +%s)
           acted=0
+          failed=0
 
           # Draft a pull request, printing "yes" or "no". Whether it worked decides what the
           # comment says: a message claiming the pull request was drafted when it is still open
@@ -238,6 +256,72 @@ jobs:
                 ;;
             esac
 
+            # ---- 1a. a red build nobody told the author about ------------------------------
+            #
+            # The relay in `review` only fires on CHANGES_REQUIRED, so until now a failing
+            # `test` reached no one. #49 is the case: reviewed, came back VERDICT: CLEAN, and
+            # `test` red because the suite ran 664 while the documents said 662. Correct on
+            # every side, and completely stuck — the session that wrote it had no idea, and the
+            # pull request would have sat until the seven-day abandon sweep closed it.
+            #
+            # A red build is more actionable than a review finding: it is a fact, not an
+            # opinion, and the failing output says exactly what to change.
+            test_conclusion=$(gh api "repos/${GH_REPO}/commits/${sha}/check-runs" \
+              --jq '[.check_runs[] | select(.name == "test")] | last | .conclusion // empty' 2>/dev/null || true)
+
+            if [ "$test_conclusion" = "failure" ]; then
+              # Relay once per failing commit. The marker is a comment containing the sha, so
+              # no state is stored anywhere and a re-run cannot double-send.
+              if gh pr view "$n" --repo "$GH_REPO" --json comments \
+                   --jq '[.comments[].body] | join(" ")' 2>/dev/null | grep -q "build-relay:${sha}"; then
+                echo "#${n}: build already failing and already relayed for ${sha}"
+                continue
+              fi
+
+              echo "#${n}: \`test\` failed on ${sha} — relaying to the author"
+              run_id=$(gh api "repos/${GH_REPO}/commits/${sha}/check-runs" \
+                --jq '[.check_runs[] | select(.name == "test")] | last | .details_url' 2>/dev/null \
+                | grep -oE '/runs/[0-9]+' | grep -oE '[0-9]+' || true)
+              log=""
+              [ -n "$run_id" ] && log=$(gh run view "$run_id" --repo "$GH_REPO" --log-failed 2>/dev/null | tail -c 3000 || true)
+
+              session=$(gh pr view "$n" --repo "$GH_REPO" --json body --jq '.body' 2>/dev/null \
+                | grep -oE '(jules\.google\.com/(task|session)/|sessions/)[0-9]+' \
+                | grep -oE '[0-9]+' | head -1 || true)
+
+              {
+                printf 'The pull request you opened (#%s, branch `%s`) has a failing build. It cannot merge until `test` is green, and no review verdict changes that.\n\n' "$n" "$ref"
+                printf 'Fix it on the SAME branch and push there; do not open a new pull request. Run `npm test` locally before pushing.\n\n'
+                printf 'A common cause in this repository: adding or removing a test changes the suite total, and `ci.yml` fails if the number in the documents disagrees with the number the suite actually ran. The failure output names every file to update.\n\n'
+                printf -- '--- end of the failing run ---\n\n```\n%s\n```\n' "${log:-（no log could be retrieved — see the run in the Actions tab）}"
+              } > /tmp/build-msg.md
+
+              delivered=""
+              if [ -n "$session" ] && [ -n "${JULES_API_KEY:-}" ]; then
+                jq -Rs '{prompt: .}' < /tmp/build-msg.md > /tmp/build-send.json
+                code=$(curl -sS -o /tmp/build-out.json -w '%{http_code}' --max-time 60 \
+                  -X POST "https://jules.googleapis.com/v1alpha/sessions/${session}:sendMessage" \
+                  -H "x-goog-api-key: ${JULES_API_KEY}" -H 'Content-Type: application/json' \
+                  -d @/tmp/build-send.json || printf '000')
+                echo "sendMessage → HTTP ${code}"
+                { [ "$code" = "200" ] || [ "$code" = "204" ]; } && delivered="the authoring Jules session"
+              fi
+
+              if [ -n "$delivered" ]; then
+                note="Relayed to ${delivered}."
+              elif [ -z "$session" ]; then
+                note="This pull request carries no Jules session id, so there is no author to notify — whoever owns this branch needs to look."
+              else
+                note="The authoring session could not be reached, so nobody has been told automatically."
+              fi
+              gh pr comment "$n" --repo "$GH_REPO" --body \
+                "\`test\` is failing on \`${sha}\`, so this cannot merge whatever the review says. ${note}
+
+          <!-- build-relay:${sha} -->" || true
+              acted=$((acted + 1))
+              continue
+            fi
+
             # ---- 1. no verdict: release on `test` alone ------------------------------------
             if [ "$automerge" = "true" ]; then
               echo "#${n}: already queued for merge"
@@ -245,13 +329,30 @@ jobs:
             fi
             if [ "$mins" -ge "$GRACE_MINUTES" ]; then
               echo "#${n}: ${mins} minutes with no verdict — releasing on \`test\`"
-              gh pr merge "$n" --repo "$GH_REPO" --auto --squash --delete-branch || true
-              gh pr comment "$n" --repo "$GH_REPO" --body \
-                "Queued for merge without a review. No verdict arrived within ${GRACE_MINUTES} minutes, so \`test\` is the only gate on this one. That is deliberate: a reviewer that is down must not be able to stop the project while nobody is watching. Check the \`review\` workflow if this keeps happening." || true
-              acted=$((acted + 1))
+              # No `|| true`. This is the release valve, and a valve that fails quietly is the
+              # same as no valve — which is exactly what happened while this file ran with
+              # `contents: read`: the merge was refused, the failure was swallowed, and the run
+              # still counted the pull request as acted on and exited green.
+              if gh pr merge "$n" --repo "$GH_REPO" --auto --squash --delete-branch; then
+                gh pr comment "$n" --repo "$GH_REPO" --body \
+                  "Queued for merge without a review. No verdict arrived within ${GRACE_MINUTES} minutes, so \`test\` is the only gate on this one. That is deliberate: a reviewer that is down must not be able to stop the project while nobody is watching. Check the \`review\` workflow if this keeps happening." || true
+                acted=$((acted + 1))
+              else
+                echo "::error::#${n} is past its grace period and could not be queued for merge. The release valve is not working, so nothing will merge without a clean review."
+                gh pr comment "$n" --repo "$GH_REPO" --body \
+                  "No verdict arrived within ${GRACE_MINUTES} minutes, so this should have been released on \`test\` alone — and queueing the merge failed. See [the run log](${GITHUB_SERVER_URL}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}). Until that is fixed nothing merges here without a clean review, which is the deadlock this workflow exists to prevent, so it needs a human." || true
+                failed=$((failed + 1))
+              fi
             else
               echo "#${n}: ${mins} minutes old, waiting for a verdict"
             fi
           done < /tmp/prs.txt
 
-          echo "swept: ${acted} pull request(s) acted on"
+          echo "swept: ${acted} pull request(s) acted on, ${failed} action(s) failed"
+          if [ "$failed" -gt 0 ]; then
+            # Red on purpose. Everything above is a deadline nobody is watching, so a sweeper
+            # that could not do its job must not report success — that is how it ran for an
+            # afternoon announcing "swept: 2" while merging nothing at all.
+            echo "::error::${failed} pull request(s) could not be acted on. Deadlines in this file are not being enforced."
+            exit 1
+          fi

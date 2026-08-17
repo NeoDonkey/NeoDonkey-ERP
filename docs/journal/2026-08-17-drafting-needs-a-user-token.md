@@ -53,3 +53,37 @@ event for the merge commit on main was never delivered, so `test` never ran ther
 the way it was designed to: no verdict, a comment on the pull request saying so rather than a silent
 pass, and release on `test` alone after the grace period. That is the correct behaviour and it is
 still a weaker bar than a review, which is the argument for keeping a second provider configured.
+
+## The gate could not pass anything
+
+Later the same day, #49 came back `VERDICT: CLEAN` and did not merge. Neither did #48. The cause
+was one line, and it was a regression introduced by this morning's split:
+
+```
+review  CLEAN → enablePullRequestAutoMerge → Resource not accessible by integration
+sweeper       → mergePullRequest           → Resource not accessible by integration
+```
+
+The deleted `auto-merge.yml` held `contents: write`. When its job was folded into `review` and
+`merge-sweeper`, both inherited `contents: read`, and queueing a merge needs write. So from the
+moment the review loop went live, **nothing in this repository could merge at all** — which is
+precisely the failure the original design refused to risk when it declined to let the reviewer hold
+the queue. A gate that cannot pass anything is not strict; it is broken.
+
+It was invisible for the same reason as everything else here: `gh pr merge` was wrapped in
+`|| true`, so the sweeper announced "swept: 2 pull request(s) acted on" while merging nothing.
+
+The fix restores the separation `auto-merge.yml` had, and for the reason it gave: "No checkout:
+this job never needs the pull request's code, and running untrusted code in a job holding a write
+token is how repositories get taken over." Queueing is now its own job with `contents: write` and
+no checkout, gated on the review job's verdict output; the review job keeps `contents: read`
+because it hands a pull request's contents to a model with tools. Permissions are declared per job
+rather than per workflow, so the two cannot drift back together. Both paths now fail loudly and
+comment on the pull request when they cannot queue a merge.
+
+#49 also exposed a gap rather than a bug. Its build was red — the suite ran 664 while the documents
+said 662, which is the count guard doing exactly its job — and nothing told the session that wrote
+it, because the relay only fires on CHANGES_REQUIRED. It would have sat until the seven-day abandon
+sweep closed it. A failing build now goes back to the authoring session the same way review findings
+do, once per failing commit, with the tail of the failing run attached. A red build is the more
+useful of the two messages: it is a fact rather than an opinion, and the output names what to change.
