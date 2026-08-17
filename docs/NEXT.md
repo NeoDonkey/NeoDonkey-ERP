@@ -9,8 +9,8 @@ so it is the one that has to be true.
 
 ## Where the project stands
 
-v0.1 of the runtime is in the repository and the suite is green: **669 tests, 667 passing, 2
-skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
+v0.1 of the runtime is in the repository and the suite is green: **about 30 seconds, 2
+skipped, no failures.** `npm test` is a required check, so nothing merges past a
 red build — and since 2026-08-17 nothing merges past a review that asked for changes either. Read
 §7 of `AGENTS.md` before you open a pull request: your work is not finished when the pull request
 is open, it is finished when a review comes back clean, and the findings reach you as a message in
