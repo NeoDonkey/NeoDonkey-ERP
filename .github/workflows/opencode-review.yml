@@ -67,6 +67,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # The reviewer has write tools and sometimes decides to use them, even though this
+      # prompt asks it to review rather than fix. When it tried on #43 it hit a bare
+      # checkout with no git identity, and posted git's own error as its review:
+      # "Author identity unknown. *** Please tell me who you are." The verdict came back
+      # UNKNOWN and the pull request fell through to the grace timer — safe, but a review
+      # silently replaced by a git error message.
+      #
+      # An identity here does not let anything reach main: `persist-credentials: false`
+      # above means there is no token to push with. It just stops a local commit from
+      # aborting and eating the review.
+      - name: Give git an identity, so a stray commit cannot eat the review
+        run: |
+          git config user.name  "opencode review"
+          git config user.email "opencode-review@users.noreply.github.com"
+
       - name: Choose a provider that will answer
         id: probe
         env:
@@ -95,12 +110,29 @@ jobs:
               exit 0
             fi
           fi
+          # The fallback, and it costs nothing: `:free` models on OpenRouter are $0, no card.
+          #
+          # It was dead until 2026-08-17. The model was `deepseek/deepseek-v4-flash:free`,
+          # which does not exist on OpenRouter — the probe returned 404. Nobody noticed for
+          # five days because OPENROUTER_API_KEY was unset, so the branch never ran: an
+          # untested fallback and an absent one look identical from the outside.
+          #
+          # What this fallback is and is not. Free models are capped at 20 requests a minute
+          # and 50 a DAY on an account with no credits purchased. An agentic review spends one
+          # request per tool call, so 50 a day is roughly one to three reviews — enough to
+          # cover a zen outage, not enough to be a second full-time reviewer. When it runs out
+          # the probe returns 429, no verdict is produced, and merge-sweeper releases the pull
+          # request on `test` alone. That is the intended behaviour, not a new failure.
+          #
+          # Nemotron 3 Ultra is chosen over the smaller free models deliberately: a weak
+          # reviewer is worse than none here, because a wrong CHANGES_REQUIRED burns three
+          # relay rounds of Jules quota and then parks work that was fine.
           if [ -n "${OR_KEY:-}" ]; then
-            code=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" deepseek/deepseek-v4-flash:free)
+            code=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" nvidia/nemotron-3-ultra-550b-a55b:free)
             echo "openrouter: HTTP $code"
             if [ "$code" = "200" ]; then
               echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-              echo "model=openrouter/deepseek/deepseek-v4-flash:free" >> "$GITHUB_OUTPUT"
+              echo "model=openrouter/nvidia/nemotron-3-ultra-550b-a55b:free" >> "$GITHUB_OUTPUT"
               exit 0
             fi
           fi
@@ -127,6 +159,13 @@ jobs:
             it states the rules this project actually answers to. Be concise and specific:
             file and line, what is wrong, why it matters here. No praise, no summary of
             the diff, no generic advice.
+
+            You are reviewing, not fixing. Do not edit any file, do not stage anything, and
+            do not commit. Your entire output is one comment. The author is a different agent
+            and it is their job to act on what you find — a fix you make here cannot reach the
+            branch anyway, because this checkout has no credentials to push with, so the only
+            thing an attempted commit achieves is replacing your review with a git error. That
+            happened on #43.
 
             Refuse-worthy findings, in priority order. These are not style preferences;
             each one breaks a stated commitment:
@@ -234,6 +273,30 @@ jobs:
       # session to relay to — anything the opencode lane opened — would carry no relay label,
       # look untouched to merge-sweeper, and get released on `test` alone 45 minutes later.
       # Refused work would merge precisely because the refusal could not be delivered.
+      # An UNKNOWN verdict used to be a `::warning::` in a run log nobody opens. It is the
+      # one outcome that quietly lowers the bar — the pull request goes on to merge on `test`
+      # alone — so it has to be legible on the pull request itself, and it has to name which
+      # of the two causes it was. merge-sweeper comments again 45 minutes later when it
+      # actually releases; this comment is what explains why.
+      - name: Say so when the review did not produce a verdict
+        if: always() && steps.verdict.outputs.verdict == 'UNKNOWN'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PROVIDER: ${{ steps.probe.outputs.provider }}
+        run: |
+          set -uo pipefail
+          if [ "$PROVIDER" = "none" ]; then
+            why="No review provider answered — \`OPENCODE_API_KEY\` was rate-limited or down, and \`OPENROUTER_API_KEY\` is not set, so there was no fallback."
+          else
+            why="The reviewer ran but produced no \`VERDICT:\` line. Usually it crashed part-way and posted whatever it had — check the comment above and [the run log](${GITHUB_SERVER_URL}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID})."
+          fi
+          gh pr comment "$PR" --repo "$GH_REPO" --body \
+            "**This pull request was not reviewed.** ${why}
+
+          It is not blocked. \`merge-sweeper\` releases it on \`test\` alone 45 minutes after the last push, because a reviewer that is down must not be able to stop the project while nobody is watching. But it does mean this change is merging on \"the tests passed\" rather than on the AGENTS.md checks, which is a weaker bar — so if this keeps happening, fix the reviewer rather than getting used to it." || true
+
       - name: Record that changes were requested
         if: always() && steps.verdict.outputs.verdict == 'CHANGES_REQUIRED'
         env:

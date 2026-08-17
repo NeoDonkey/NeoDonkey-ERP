@@ -176,6 +176,9 @@ jobs:
         env:
           ZEN_KEY: ${{ secrets.OPENCODE_API_KEY }}
           OR_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Must match the model in `review` and `audit`. If you change it there, change it
+          # here — this check is worthless if it probes a different model than the lanes use.
+          OR_MODEL: nvidia/nemotron-3-ultra-550b-a55b:free
         run: |
           set -uo pipefail
           report() { printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; echo "$1"; }
@@ -190,6 +193,7 @@ jobs:
             [ -n "$code" ] && printf '%s' "$code" || printf '000'
           }
           any=0
+          fail_model=0
           if [ -n "${ZEN_KEY:-}" ]; then
             c=$(probe https://opencode.ai/zen/v1/chat/completions "$ZEN_KEY" big-pickle)
             [ "$c" = "200" ] && { report '- opencode zen: **answering**'; any=1; } || report "- opencode zen: **HTTP ${c}**"
@@ -197,12 +201,28 @@ jobs:
             report '- opencode zen: key not set'
           fi
           if [ -n "${OR_KEY:-}" ]; then
-            c=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" deepseek/deepseek-v4-flash:free)
-            [ "$c" = "200" ] && { report '- openrouter: **answering**'; any=1; } || report "- openrouter: **HTTP ${c}**"
+            c=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" "$OR_MODEL")
+            case "$c" in
+              200) report '- openrouter: **answering**'; any=1 ;;
+              # 404 is a config bug, not a quota problem, and the two need opposite
+              # responses — one is "fix the model id", the other is "wait". They were
+              # indistinguishable on 2026-08-17, when the configured model was
+              # `deepseek/deepseek-v4-flash:free`, which does not exist on OpenRouter. The
+              # fallback had never run because the key was unset, so nobody had seen the 404.
+              404) report "- openrouter: **HTTP 404 — the model \`${OR_MODEL}\` does not exist.** The key is fine; the model id is wrong. Pick one from https://openrouter.ai/models?max_price=0 that supports tool calling, and change it in \`review\`, \`audit\` and here."; fail_model=1 ;;
+              401|403) report "- openrouter: **HTTP ${c} — the key was rejected.** Expired, revoked, or mistyped." ;;
+              429) report '- openrouter: **HTTP 429 — rate limited.** Free models allow 20 requests a minute and 50 a day without purchased credits, and one agentic review spends many requests. Expected to happen; it means no review today, not a broken setup.' ;;
+              *)   report "- openrouter: **HTTP ${c}**" ;;
+            esac
           else
             report '- openrouter: key not set — there is no fallback. If zen is rate-limited, nothing gets reviewed and every pull request merges on `test` alone after the grace period.'
           fi
-          if [ "$any" = "1" ]; then
+          # A misconfigured fallback is reported even while zen is answering. Otherwise it stays
+          # invisible until the day zen is down, which is the one day it was needed.
+          if [ "$fail_model" = "1" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=the OpenRouter fallback names a model that does not exist, so there is no fallback — see the run summary" >> "$GITHUB_OUTPUT"
+          elif [ "$any" = "1" ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"

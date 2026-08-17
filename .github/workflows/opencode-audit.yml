@@ -86,11 +86,11 @@ jobs:
           fi
 
           if [ -n "${OR_KEY:-}" ]; then
-            code=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" deepseek/deepseek-v4-flash:free)
+            code=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" nvidia/nemotron-3-ultra-550b-a55b:free)
             echo "openrouter: HTTP $code"
             if [ "$code" = "200" ]; then
               echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-              echo "model=openrouter/deepseek/deepseek-v4-flash:free" >> "$GITHUB_OUTPUT"
+              echo "model=openrouter/nvidia/nemotron-3-ultra-550b-a55b:free" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             [ "$code" = "429" ] && echo "openrouter is rate limited"
