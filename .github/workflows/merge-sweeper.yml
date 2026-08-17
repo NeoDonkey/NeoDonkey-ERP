@@ -98,20 +98,50 @@ jobs:
           # job reports "swept: 0" and exits green. A sweeper that silently stops sweeping is
           # precisely the class of failure this whole file exists to catch, so it must fail
           # loudly instead — hence the check.
-          if ! gh pr list --repo "$GH_REPO" --state open --limit 100 \
-                --json number,isDraft,mergeable,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
-                --jq '.[] | {
-                        n: .number,
-                        draft: .isDraft,
-                        mergeable: .mergeable,
-                        automerge: (.autoMergeRequest != null),
-                        labels: [.labels[].name],
-                        ref: .headRefName,
-                        sha: .headRefOid,
-                        owner: .headRepositoryOwner.login
-                      } | @base64' > /tmp/prs.txt; then
-            echo "::error::Could not list open pull requests. Nothing was swept, and every"
-            echo "::error::deadline in this file is therefore not being enforced. Fix this first."
+          list_prs() {
+            gh pr list --repo "$GH_REPO" --state open --limit 100 \
+              --json number,isDraft,mergeable,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
+              --jq '.[] | {
+                      n: .number,
+                      draft: .isDraft,
+                      mergeable: .mergeable,
+                      automerge: (.autoMergeRequest != null),
+                      labels: [.labels[].name],
+                      ref: .headRefName,
+                      sha: .headRefOid,
+                      owner: .headRepositoryOwner.login
+                    } | @base64' > /tmp/prs.txt 2>/tmp/prs.err
+          }
+
+          ok=0
+          for attempt in 1 2 3; do
+            if list_prs; then ok=1; break; fi
+            echo "listing attempt ${attempt} failed: $(tr -d '\n' < /tmp/prs.err | head -c 200)"
+            [ "$attempt" -lt 3 ] && sleep 15
+          done
+
+          if [ "$ok" = "0" ]; then
+            # Two different failures wearing the same coat, and they need opposite responses.
+            #
+            # A transient 5xx is GitHub being unwell — observed for hours on 2026-08-17, while
+            # its status page reported all systems operational. Nobody can act on it, the next
+            # run is twenty minutes away, and every deadline here is measured in hours, so
+            # missing one sweep costs nothing. Going red for it would train everyone to ignore
+            # red, which this repository has decided is worse than the occasional missed signal.
+            #
+            # Anything else is this file being wrong, and that persists until someone fixes it.
+            # It has already happened once: the listing asked for `commits`, which exceeds
+            # GitHub's GraphQL node limit, so the query always failed — and because the redirect
+            # still created an empty file, the job reported "swept: 0" and exited green while
+            # enforcing nothing at all.
+            if grep -qE '\b(500|502|503|504)\b|No server is currently available|timeout|temporarily unavailable' /tmp/prs.err; then
+              echo "::warning::Could not list pull requests after 3 attempts — GitHub returned a transient error. Nothing swept this run; the next one is in 20 minutes and no deadline here is that tight. Not failing the run, because nobody can act on a GitHub outage."
+              exit 0
+            fi
+            echo "::error::Could not list open pull requests, and the error does not look transient."
+            echo "::error::Nothing was swept, so no deadline in this file is being enforced — not the"
+            echo "::error::45-minute release, not the 12-hour park, not the conflict or abandon rules."
+            echo "::error::stderr was: $(tr -d '\n' < /tmp/prs.err | head -c 400)"
             exit 1
           fi
 

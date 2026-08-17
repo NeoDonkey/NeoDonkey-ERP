@@ -32,6 +32,19 @@ tries to draft and can fail, so without the label check a parked pull request wo
 again on its next push, spending provider quota to re-derive findings already sitting unanswered in
 its own comments.
 
+The same outage exposed a second thing, in the check added earlier the same day. When the listing
+query fails, the sweeper now fails the run rather than reporting "swept: 0" and exiting green — and
+during the outage that meant a red workflow every twenty minutes for a condition nobody could act
+on, which is precisely what `agent-watchdog.yml` warns against: "a workflow that is red for a reason
+nobody can act on trains everyone to ignore red."
+
+So the two failures are now told apart, because they need opposite responses. A transient 5xx gets
+three attempts and then a warning and a clean exit: the next run is twenty minutes away and every
+deadline in the file is measured in hours, so one missed sweep costs nothing. Anything else is the
+file being wrong, which persists until someone fixes it, and that still fails the run loudly —
+naming which deadlines are going unenforced, since the original bug was a malformed query that
+always failed and enforced nothing while looking healthy.
+
 Worth recording separately: GitHub was degraded for much of this afternoon in a way its status page
 never showed. `GET /repos/{owner}/{repo}/collaborators/{user}/permission` returned 503 for hours,
 which is the endpoint the opencode action gates on, so **the reviewer could not run at all** — two
