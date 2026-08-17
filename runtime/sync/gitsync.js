@@ -178,13 +178,28 @@ export function gitPeer(o) {
 
   const send = (msg) => link.send(JSON.stringify(msg));
 
+  // Frames are handled strictly in the order they arrive, one at a time.
+  //
+  // This used to be `handle(msg).catch(report)` — fire-and-forget into an async function — so
+  // two frames were in flight whenever the first one awaited anything, and their handlers
+  // interleaved. The protocol below assumes order: `pack!` allocates the buffer, `chunk`
+  // appends to it, `done` concatenates and settles. Let `done` overtake a `chunk` and the
+  // receiver assembles a short buffer from whatever had landed, then hands it to ingestPack,
+  // which fails deep inside readPackIndex with "index file is too small (0 bytes, minimum
+  // 1072)" — a message about the pack index that has nothing to do with the pack index.
+  //
+  // It only showed up under load, because that is when the event loop actually interleaves:
+  // never when test/readme-claims.test.js ran alone, about one run in four when the whole
+  // suite ran at --test-concurrency=2, and finally on CI on 2026-08-17. Serialising here is
+  // what makes the ordering the protocol already assumed actually true.
+  let queue = Promise.resolve();
   link.onFrame((frame) => {
     let msg;
     try { msg = JSON.parse(frame); } catch {
       report(new SyncError('git sync: frame is not JSON'));
       return;
     }
-    handle(msg).catch(report);
+    queue = queue.then(() => handle(msg)).catch(report);
   });
 
   /** @param {any} msg */
@@ -238,12 +253,44 @@ export function gitPeer(o) {
         const buf = incoming.get(msg.n);
         if (buf === undefined) throw new SyncError('git sync: done arrived for no pack');
         incoming.delete(msg.n);
-        settle(msg.n, 'pack', {
-          empty: false,
-          header: buf.header,
-          pack: concatBytes(...buf.pack),
-          idx: concatBytes(...buf.idx),
-        });
+        const pack = concatBytes(...buf.pack);
+        const idx = concatBytes(...buf.idx);
+
+        // The `pack!` header announced how many bytes of each part were coming. Check it.
+        //
+        // Principle 6: a short transfer is named here, where the sizes are known, rather than
+        // handed on to be discovered later by whatever chokes on it first. Before this, a
+        // truncated idx surfaced as "readPackIndex: index file is too small (0 bytes)" — an
+        // error about the pack index format, from a function that had been given a fine
+        // argument by a caller that never received the data. Nobody reading that message would
+        // look at the transport, and for five days nobody did.
+        for (const [part, got, want] of [
+          ['pack', pack.length, buf.header.packBytes],
+          ['idx', idx.length, buf.header.idxBytes],
+        ]) {
+          if (typeof want === 'number' && got !== want) {
+            throw new SyncError(
+              `git sync: the ${part} arrived incomplete — ${got} bytes of the ${want} the peer `
+              + 'announced. The transfer was truncated or its frames were reordered; nothing has '
+              + 'been ingested.');
+          }
+        }
+
+        // The check above compares what arrived against what was announced, so it cannot see a
+        // peer that announced nothing. A pack with objects in it always has an index — `serve`
+        // sends `nothing` when there is nothing to send — so an announced idx of zero beside a
+        // non-empty pack is the sender being wrong, and ingesting it would produce that same
+        // "index file is too small (0 bytes)" from readPackIndex, with the announcement and the
+        // arrival agreeing perfectly on a nonsense value.
+        if (pack.length > 0 && idx.length === 0) {
+          throw new SyncError(
+            'git sync: the peer sent a pack of ' + pack.length + ' bytes with no index at all. '
+            + 'Its `pack!` header announced ' + JSON.stringify(buf.header.idxBytes) + ' index '
+            + 'bytes, so the fault is on the sending side, not in transit; nothing has been '
+            + 'ingested.');
+        }
+
+        settle(msg.n, 'pack', { empty: false, header: buf.header, pack, idx });
         return;
       }
       default:
