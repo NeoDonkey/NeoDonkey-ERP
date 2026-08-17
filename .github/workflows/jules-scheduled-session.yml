@@ -2,25 +2,36 @@ name: jules-scheduled-session
 
 # Starts autonomous Google Jules sessions through the Jules REST API.
 #
-# Cadence. Six a day, every four hours, against a free-tier allowance of fifteen sessions a
-# day. The nine remaining are not spare: `review` spends them when it has to relay findings
-# into a session that has already finished and can only be reached by starting a new one. A
-# schedule that used the whole allowance would take the review loop's budget with it, and the
-# review loop is what keeps the work correct.
+# Cadence. Every two hours, topping up to three live sessions, against a free-tier allowance of
+# fifteen a day and three at once. Two are held back for the review loop, which spends a session
+# when it has to relay findings into a Jules session that has already finished and can only be
+# reached by starting a new one.
 #
-# Two things are checked before a session is started, because the expensive failure here is
-# not an unused session but three of them working on the same files at once:
+# Running three at once is only safe because of what changed on 2026-08-17. Before that, AGENTS.md
+# §9 told every session to rewrite `docs/NEXT.md` and append to the top of `docs/JOURNAL.md`, so
+# any two concurrent sessions conflicted by construction — five of the previous six Jules pull
+# requests touched both files, and #28 and #29 both sat CONFLICTING for two days. Nothing here
+# rebases, and a conflicted pull request is not just unmergeable: GitHub cannot compute its merge
+# commit, so it runs no checks on it at all and the change becomes unreviewable. Journal entries
+# are now one file per change and `docs/NEXT.md` is rewritten only when the plan actually changed,
+# which is what makes parallelism produce work instead of collisions. If that convention is ever
+# reverted, drop this back to one session at a time — see `test/journal-hygiene.test.js`.
 #
-#   - How many pull requests are already open. This repository merges one change at a time
-#     and AGENTS.md says so; parallel sessions produce conflicts, and a conflicted pull
-#     request is worse than no pull request. #28 sat conflicted from 2026-08-15 to 2026-08-17
-#     with nobody to rebase it.
-#   - How many Jules sessions are already running, against the three-concurrent limit. Asking
-#     for a fourth wastes the call and the quota.
+# Three things are checked before starting anything:
+#
+#   - The daily budget, counted from the API rather than assumed, so a manual session or a relay
+#     fallback earlier in the day is accounted for.
+#   - How many sessions are already live, against the three-concurrent limit. Asking for a fourth
+#     wastes the call and the quota.
+#   - How many pull requests are already open and unreviewed. Sessions are cheap; a queue of
+#     changes nobody has merged is not, because each one is another chance to collide.
 
 on:
   schedule:
-    - cron: '0 */4 * * *'
+    # Every two hours. Each run tops the number of live sessions up to the concurrency limit
+    # rather than starting exactly one, so the daily allowance actually gets used; the budget
+    # check below is what stops it running past fifteen.
+    - cron: '0 */2 * * *'
   workflow_dispatch:
     inputs:
       prompt:
@@ -52,55 +63,99 @@ jobs:
           GH_REPO: ${{ github.repository }}
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           FORCE: ${{ github.event.inputs.force }}
-          # One in flight, plus one that may be mid-review. A third is already a conflict
-          # waiting to happen in a repository where nothing rebases.
-          MAX_OPEN_PRS: 2
+          # Google Jules free tier: three sessions at once, fifteen a day.
           MAX_ACTIVE_SESSIONS: 3
+          # Thirteen rather than fifteen. The two held back are for `review`, which starts a
+          # session on the branch when it needs to deliver findings to a Jules session that has
+          # already finished. Running the schedule to the last session would take the review
+          # loop's budget, and an unreviewed change is worth less than an unstarted one.
+          DAILY_BUDGET: 13
+          # Unreviewed changes in flight, not sessions. Three concurrent sessions are fine now
+          # that they no longer share files; a pile of open pull requests is not, because each
+          # is another chance for the next merge to conflict with the rest.
+          MAX_OPEN_PRS: 4
         run: |
           set -uo pipefail
-
-          if [ "${FORCE:-false}" = "true" ]; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
-            echo "forced — skipping the queue checks"
-            exit 0
-          fi
+          echo "start=0" >> "$GITHUB_OUTPUT"   # overwritten below; a bad exit starts nothing
 
           # Drafts do not count: this repository parks work by drafting it, and a parked
           # pull request is waiting for a human, not occupying the lane.
           open_prs=$(gh pr list --repo "$GH_REPO" --state open --limit 100 \
             --json isDraft --jq '[.[] | select(.isDraft == false)] | length' 2>/dev/null || echo 0)
-          echo "open non-draft pull requests: ${open_prs}"
-          if [ "${open_prs:-0}" -ge "$MAX_OPEN_PRS" ]; then
-            echo "go=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::${open_prs} pull requests already open — not starting another session. Landing what is in flight comes first."
+          echo "open non-draft pull requests: ${open_prs} (max ${MAX_OPEN_PRS})"
+
+          if [ "${FORCE:-false}" = "true" ]; then
+            echo "start=1" >> "$GITHUB_OUTPUT"
+            echo "forced — starting one session regardless of the checks above"
             exit 0
           fi
 
-          if [ -n "${JULES_API_KEY:-}" ]; then
-            code=$(curl -sS -o /tmp/sessions.json -w '%{http_code}' --max-time 30 \
-              -H "x-goog-api-key: ${JULES_API_KEY}" \
-              'https://jules.googleapis.com/v1alpha/sessions?pageSize=30' || printf '000')
-            if [ "$code" = "200" ]; then
-              active=$(jq '[.sessions[]? | select(.state == "QUEUED" or .state == "PLANNING" or .state == "IN_PROGRESS" or .state == "AWAITING_PLAN_APPROVAL")] | length' /tmp/sessions.json 2>/dev/null || echo 0)
-              echo "active Jules sessions: ${active}"
-              if [ "${active:-0}" -ge "$MAX_ACTIVE_SESSIONS" ]; then
-                echo "go=false" >> "$GITHUB_OUTPUT"
-                echo "::notice::${active} sessions already active — at the concurrency limit. Skipping."
-                exit 0
-              fi
-            else
-              echo "::notice::Could not list sessions (HTTP ${code}) — proceeding on the pull request count alone."
-            fi
+          if [ "${open_prs:-0}" -ge "$MAX_OPEN_PRS" ]; then
+            echo "::notice::${open_prs} pull requests already open — starting nothing. Landing what is in flight comes first."
+            exit 0
           fi
 
-          echo "go=true" >> "$GITHUB_OUTPUT"
+          if [ -z "${JULES_API_KEY:-}" ]; then
+            echo "::notice ::JULES_API_KEY is not set — nothing to do."
+            exit 0
+          fi
 
-      - name: Start the session
-        if: steps.room.outputs.go == 'true'
+          code=$(curl -sS -o /tmp/sessions.json -w '%{http_code}' --max-time 30 \
+            -H "x-goog-api-key: ${JULES_API_KEY}" \
+            'https://jules.googleapis.com/v1alpha/sessions?pageSize=100' || printf '000')
+
+          if [ "$code" != "200" ]; then
+            # Cannot see the budget, so spend the minimum. One session cannot exceed any limit
+            # on its own, and the alternative — assuming there is room — is how a daily
+            # allowance gets burnt before noon.
+            echo "::notice::Could not list sessions (HTTP ${code}). Starting one session only, since the budget is unknown."
+            echo "start=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          active=$(jq '[.sessions[]? | select(.state=="QUEUED" or .state=="PLANNING" or .state=="IN_PROGRESS" or .state=="AWAITING_PLAN_APPROVAL")] | length' /tmp/sessions.json 2>/dev/null || echo 0)
+
+          # Sessions started since midnight UTC. The field name is not documented, so try the
+          # plausible spellings; if none is present, `today` stays empty and the budget check is
+          # skipped rather than guessed at — reported, so it does not become a silent hole.
+          midnight="$(date -u +%Y-%m-%d)T00:00:00Z"
+          today=$(jq -r --arg m "$midnight" \
+            '[.sessions[]? | (.createTime // .createdAt // .create_time // empty) | select(. >= $m)] | length' \
+            /tmp/sessions.json 2>/dev/null || echo "")
+
+          echo "active sessions: ${active:-0} (limit ${MAX_ACTIVE_SESSIONS})"
+          if [ -n "${today:-}" ] && [ "${today}" != "null" ]; then
+            echo "sessions started today: ${today} (budget ${DAILY_BUDGET})"
+            remaining=$(( DAILY_BUDGET - today ))
+          else
+            echo "::warning::The sessions API returned no creation timestamp, so the daily budget cannot be counted. Falling back to one session per run — 12 a day at this cadence, still inside the allowance. Check the field name in the API response and fix the jq above."
+            remaining=1
+          fi
+
+          room=$(( MAX_ACTIVE_SESSIONS - active ))
+          [ "$room" -lt 0 ] && room=0
+          [ "$remaining" -lt 0 ] && remaining=0
+          start=$(( room < remaining ? room : remaining ))
+
+          # Never queue more changes than the review loop can absorb.
+          pr_room=$(( MAX_OPEN_PRS - open_prs ))
+          [ "$pr_room" -lt 0 ] && pr_room=0
+          [ "$start" -gt "$pr_room" ] && start="$pr_room"
+
+          echo "start=${start}" >> "$GITHUB_OUTPUT"
+          if [ "$start" = "0" ]; then
+            echo "::notice::No room — ${active} sessions active, ${remaining} left in today's budget, ${pr_room} pull request slots free."
+          else
+            echo "starting ${start} session(s)"
+          fi
+
+      - name: Start the sessions
+        if: steps.room.outputs.start != '0'
         env:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           CUSTOM_PROMPT: ${{ github.event.inputs.prompt }}
           GITHUB_REPO: ${{ github.repository }}
+          START: ${{ steps.room.outputs.start }}
         run: |
           set -uo pipefail
 
@@ -124,11 +179,30 @@ jobs:
           Pick up the next unclaimed ready issue, or the next item in docs/NEXT.md if the issue
           queue has nothing for you. Check the open pull requests first — an issue referenced by
           one is already claimed, and duplicating it wastes both sessions. Implement the change
-          with unit tests, verify with `npm test`, update docs/NEXT.md and docs/JOURNAL.md, and
-          publish the pull request ready for review, not as a draft.
+          with unit tests, verify with `npm test`, and publish the pull request ready for review,
+          not as a draft.
 
           A new test must fail before your change and pass after it. If it passes both ways it
           proves nothing. Never weaken, skip or delete an existing test to get the suite green.
+
+          UP TO THREE SESSIONS RUN AT ONCE, INCLUDING YOURS
+
+          Nothing in this repository rebases, so a file two sessions both edit is a conflict — and
+          a conflicted pull request is not merely unmergeable, it is unreviewable: GitHub cannot
+          compute its merge commit and runs no checks on it at all. Read AGENTS.md §9 and follow it
+          exactly:
+
+            - Record what you did in a NEW file, `docs/journal/YYYY-MM-DD-short-slug.md`. Do not
+              append to docs/JOURNAL.md. That file is the archive, and appending to it is what made
+              every parallel session collide until 2026-08-17.
+            - Rewrite docs/NEXT.md ONLY if you changed the plan — you closed the item it names, or
+              found something more urgent, or found that what it says is untrue. If the next step is
+              unchanged, leave the file alone and say so in the pull request.
+            - Touch docs/COMPROMISES.md only if a compromise genuinely changed state, and check the
+              open pull requests first in case another session is already in it.
+
+          Keep your diff to the files your change actually needs. Every extra shared file you touch
+          is a chance to destroy another session's work as well as your own.
 
           Then stay available. An automated reviewer examines your pull request against
           AGENTS.md a few minutes after you open it, and its findings are sent back to you as a
@@ -149,8 +223,6 @@ jobs:
           PROMPT="${CUSTOM_PROMPT:-$DEFAULT_PROMPT}"
           SOURCE_NAME="sources/github/${GITHUB_REPO}"
 
-          echo "Starting a Jules session for ${SOURCE_NAME}..."
-
           PAYLOAD=$(jq -n \
             --arg prompt "$PROMPT" \
             --arg source "$SOURCE_NAME" \
@@ -164,20 +236,40 @@ jobs:
               title: "Autonomous Scheduled Task"
             }')
 
-          code=$(curl -sS -o /tmp/session.json -w '%{http_code}' --max-time 60 \
-            -X POST "https://jules.googleapis.com/v1alpha/sessions" \
-            -H "Content-Type: application/json" \
-            -H "x-goog-api-key: ${JULES_API_KEY}" \
-            -d "${PAYLOAD}" || printf '000')
+          started=0
+          for i in $(seq 1 "${START}"); do
+            echo "--- session ${i} of ${START} for ${SOURCE_NAME}"
+            code=$(curl -sS -o /tmp/session.json -w '%{http_code}' --max-time 60 \
+              -X POST "https://jules.googleapis.com/v1alpha/sessions" \
+              -H "Content-Type: application/json" \
+              -H "x-goog-api-key: ${JULES_API_KEY}" \
+              -d "${PAYLOAD}" || printf '000')
 
-          echo "HTTP ${code}"
-          cat /tmp/session.json || true
+            echo "HTTP ${code}"
+            cat /tmp/session.json || true
 
-          if [ "$code" != "200" ]; then
-            # Loud, because a silent failure here is a day with no work done and a green
+            if [ "$code" = "200" ]; then
+              started=$((started + 1))
+              echo "session: $(jq -r '.id // .name // "?"' /tmp/session.json)"
+            else
+              # Stop asking. A 429 means the allowance is gone and the next two calls will fail
+              # the same way; the budget check upstream got it wrong and that is worth seeing
+              # rather than burying under three identical errors.
+              echo "::warning::The Jules API refused session ${i} of ${START} (HTTP ${code}). Not asking again this run."
+              break
+            fi
+
+            # Every session picks its own work by reading the issue queue and the open pull
+            # requests. Firing them in the same second means all three read the same state and
+            # can choose the same issue, which wastes two of them. A short stagger is enough:
+            # each claims with a draft pull request before it starts work.
+            [ "$i" -lt "${START}" ] && sleep 20
+          done
+
+          if [ "$started" = "0" ]; then
+            # Loud, because a silent failure here is a cycle with no work done and a green
             # workflow badge saying otherwise.
-            echo "::error::The Jules API refused to start a session (HTTP ${code}). Nothing will be done this cycle."
+            echo "::error::No Jules session could be started. Nothing will be done this cycle."
             exit 1
           fi
-
-          echo "session=$(jq -r '.id // .name // "?"' /tmp/session.json)"
+          echo "started ${started} of ${START} requested session(s)"

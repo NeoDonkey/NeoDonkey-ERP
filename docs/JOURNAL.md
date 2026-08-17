@@ -1,45 +1,40 @@
 # Development journal
 
-Newest first. One entry per change, dated `YYYY-MM-DD`. A few lines each — what changed and why,
-not a restatement of the diff. `docs/NEXT.md` holds what happens next; this file holds what
-happened.
+**New entries go in `docs/journal/` as their own file** — `YYYY-MM-DD-short-slug.md`, one per
+change. Not in this file. See below for why.
+
+To read the log newest-first:
+
+```bash
+ls -r docs/journal/
+```
+
+This file is the archive of everything written before 2026-08-17, under the old convention. It is
+not appended to any more and it is not generated from anything; nothing needs to keep it in sync.
+
+## Why entries moved out of this file
+
+Because `AGENTS.md` §9 told every session to "add an entry at the top under today's date", and
+"at the top" means every session edited the same lines of the same file. Two sessions running in
+parallel therefore conflicted by construction — not occasionally, always — and nothing in this
+repository rebases, so a conflict is terminal.
+
+Measured on 2026-08-17 across the previous six Jules pull requests: five of six touched both this
+file and `docs/NEXT.md`. #28 and #29 both went `CONFLICTING` and sat unmergeable for two days. Then
+it happened to the pull request that fixed it: #47 merged in one minute while #43 was open, and
+because both touched these two files, #43 became conflicted — at which point GitHub stopped creating
+`pull_request` workflow runs for it entirely, since it cannot compute a merge commit for a
+conflicting pull request. A conflict does not merely block the merge; it makes the change
+unreviewable.
+
+Google Jules allows three concurrent sessions and fifteen a day. The quota was never the limit on
+this project's throughput. This file was.
+
+One file per entry means a session only ever creates a path no other session is writing, so parallel
+work cannot collide here. `docs/NEXT.md` is now rewritten only by a session that actually changed the
+plan, which most do not.
 
 ---
-
-## 2026-08-17
-
-- Closed the review loop. Until today every review this repository produced was written to a pull
-  request that had already merged: `auto-merge` queued on `opened`, `test` was the only required
-  check and takes about a minute, and the review takes three. On #42 the pull request merged at
-  04:51:45 and the review — correctly reporting that a document claimed 658 tests where the suite
-  ran 661 — arrived at 04:53:49. Every review ever written by that workflow landed too late to
-  matter.
-- Commenting harder would not have fixed it. Jules states on every pull request it opens that it
-  will "only act on instructions from the user who triggered this task", and the reviewer comments
-  as `github-actions`, so a GitHub comment is a channel Jules is required to ignore. The findings
-  now go through the Jules API instead — `sessions/{id}:sendMessage`, addressed by the session id
-  in the pull request body — so the reviewer talks to the session that wrote the code. It pushes to
-  the same branch, which re-runs the review. Three rounds, then the pull request is parked.
-- A clean verdict is now what enables auto-merge, which means the reviewer holds the queue. The
-  previous design deliberately refused to allow that, on the grounds that a reviewer able to block
-  the queue unattended is worse than no reviewer. That reasoning still holds and is why
-  `merge-sweeper.yml` exists: no verdict within 45 minutes and the pull request is released on
-  `test` alone. The gate can slow the queue and cannot deadlock it. `auto-merge.yml` is deleted;
-  its job is split between the two files.
-- Added `lane-doctor.yml`, a daily check that the lanes can still do what they claim. It exists
-  because of what the last five days cost: the audit lane's token could open issues but not push a
-  branch, so it could verify a fix and never land one. It reported this the only way it could, by
-  opening #14 and #17, and nothing was listening. It then re-discovered and re-filed the same
-  test-count drift eleven times — #13, #15, #16, #18, #19, #21, #24, #25, #37, #39, #41 — every
-  report correct, none of them landable. Meanwhile its provider probe began returning `000000`
-  instead of a status code and silently disabled itself, with no fallback key set to notice.
-- Landed that drift fix, which is what the eleven issues were asking for. `test/_probe.test.js`
-  was a copy of `checkout-hygiene.test.js` with `console.log` lines injected and was being counted
-  as real coverage; `test/cp-run.mjs` was the same thing done to `c-polism.test.js`, saved under an
-  extension the glob never ran. Both deleted. The count is now 658 everywhere, and guarded in two
-  halves: `test/documented-counts.test.js` proves the documents agree with each other, and a step
-  in `ci.yml` proves they agree with the suite as actually run. Only CI can do the second — a test
-  cannot count the run it is part of.
 
 ## 2026-08-13
 

@@ -74,12 +74,16 @@ you are in before you edit anything.
 
 | Lane | Planning file | Does | Edits |
 |---|---|---|---|
-| **A — build** | `docs/NEXT.md` | Implements entries from the release blocker set | `operating-model/`, `runtime/`, `demo/`, `docs/COMPROMISES.md`, `docs/JOURNAL.md` |
-| **B — audit** | `docs/AUDIT.md` | Verifies that what we claim is true, and writes the tests that keep it true | `test/`, `docs/AUDIT.md` |
+| **A — build** | `docs/NEXT.md` | Implements entries from the release blocker set | `operating-model/`, `runtime/`, `demo/`, `docs/COMPROMISES.md`, `docs/journal/` |
+| **B — audit** | `docs/AUDIT.md` | Verifies that what we claim is true, and writes the tests that keep it true | `test/`, `docs/AUDIT.md`, `docs/journal/` |
 
-Lane B never edits the register, the build backlog or the journal. It records findings in
-`docs/AUDIT.md`; lane A folds them in and acts on them. That makes the two a pipeline rather than
-a collision. Lane A does not write to `docs/AUDIT.md`.
+Lane B never edits the register or the build backlog. It records findings in `docs/AUDIT.md`; lane A
+folds them in and acts on them. That makes the two a pipeline rather than a collision. Lane A does
+not write to `docs/AUDIT.md`.
+
+Both lanes write to `docs/journal/`, and that is safe because each entry is its own file — see §9.
+`docs/AUDIT.md` is still a single shared file, so if two audit sessions ever run at once, the second
+one records its findings in its journal entry rather than fighting for the same lines.
 
 If you were given no lane, you are in lane A.
 
@@ -165,7 +169,7 @@ suggests, and the parser, ledger, live layer and sync path are built and tested.
 ## 6. Verifying
 
 ```bash
-npm test          # 658 tests, about 30 seconds. Must be green before opening a PR.
+npm test          # 662 tests, about 30 seconds. Must be green before opening a PR.
 npm run demo      # the acceptance demo, end to end
 npm run ui        # then open http://localhost:8080
 ```
@@ -256,12 +260,32 @@ git config --local user.email "226692358+danielfrommunich@users.noreply.github.c
 
 ## 9. Before you finish
 
-Leave the repository so the next change can start without archaeology:
+Leave the repository so the next change can start without archaeology.
 
-- **`docs/NEXT.md`** — rewrite it: what was done, what remains, what is blocked, and the single
-  most useful thing to pick up next. This file is read first, so it is the one that matters.
-- **`docs/JOURNAL.md`** — add an entry at the top under today's date (`YYYY-MM-DD`), a few lines
-  on what changed.
+**Write only files no other session is writing.** Up to three sessions run at once here, and nothing
+in this repository rebases, so a file two sessions both edit is a conflict — and a conflicted pull
+request is not merely unmergeable, it is unreviewable: GitHub cannot compute a merge commit for it
+and therefore runs no checks on it at all. That is why the first item below is a new file rather than
+an edit, and why the second is conditional.
+
+- **`docs/journal/YYYY-MM-DD-short-slug.md`** — **create a new file.** A few paragraphs: what
+  changed and why, not a restatement of the diff. Name it for the change
+  (`2026-08-17-close-the-review-loop.md`). Do **not** append to `docs/JOURNAL.md`; that is the
+  archive of the old convention, and appending to it is what made every parallel session collide.
+- **`docs/NEXT.md`** — rewrite it **only if you changed the plan**: you closed the item it names,
+  found something more urgent, or discovered that what it says is no longer true. If you did a piece
+  of work the file already anticipated and the next step is unchanged, leave it alone and say so in
+  the pull request. Most changes do not alter the plan, and a needless rewrite of this file is the
+  single most likely way to conflict with another session.
 - **`docs/COMPROMISES.md`** — if an entry was closed, move it and record how that was *verified*.
   If a new compromise was introduced, add it with a category, an owner and an exit path. An
   undocumented compromise is the one thing this project treats as a real failure.
+
+  This file is shared and cannot be split, so touch it only when a compromise genuinely changed
+  state. Check the open pull requests first: if another session is already editing it, do your work
+  and record the register change in your journal entry instead, naming the entry that needs moving.
+  Two sessions rewriting the register is worse than one delayed correction.
+
+  And verify before you close: on 2026-08-17 entry #13 was found marked CLOSED while the code it
+  describes was untouched — the grammar had landed and nothing had adopted it. Closing an entry
+  means you executed the thing, not that you read about it.

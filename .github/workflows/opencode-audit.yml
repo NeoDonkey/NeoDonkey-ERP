@@ -197,7 +197,7 @@ jobs:
 
             FINISHING
 
-            Run `npm test`; it must be green — 658 tests, about 30 seconds. Add an entry at
+            Run `npm test`; it must be green — 662 tests, about 30 seconds. Add an entry at
             the top of docs/JOURNAL.md under today's date. Open one pull request against
             main and fill in the template, including what you did not finish.
 
