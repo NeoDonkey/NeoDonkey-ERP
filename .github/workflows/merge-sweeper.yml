@@ -48,6 +48,8 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  # To re-run a failed `test` once before believing it — see rule 1a.
+  actions: write
 
 concurrency:
   group: merge-sweeper
@@ -270,18 +272,51 @@ jobs:
               --jq '[.check_runs[] | select(.name == "test")] | last | .conclusion // empty' 2>/dev/null || true)
 
             if [ "$test_conclusion" = "failure" ]; then
-              # Relay once per failing commit. The marker is a comment containing the sha, so
-              # no state is stored anywhere and a re-run cannot double-send.
-              if gh pr view "$n" --repo "$GH_REPO" --json comments \
-                   --jq '[.comments[].body] | join(" ")' 2>/dev/null | grep -q "build-relay:${sha}"; then
-                echo "#${n}: build already failing and already relayed for ${sha}"
-                continue
-              fi
+              comments=$(gh pr view "$n" --repo "$GH_REPO" --json comments \
+                --jq '[.comments[].body] | join(" ")' 2>/dev/null || true)
 
-              echo "#${n}: \`test\` failed on ${sha} — relaying to the author"
               run_id=$(gh api "repos/${GH_REPO}/commits/${sha}/check-runs" \
                 --jq '[.check_runs[] | select(.name == "test")] | last | .details_url' 2>/dev/null \
                 | grep -oE '/runs/[0-9]+' | grep -oE '[0-9]+' || true)
+
+              # ---- retry once before believing it ----------------------------------------
+              #
+              # `test` is a required check and the suite has a known flake (#46): the relay
+              # drops frames for a peer that is not in the mailbox, so a sync test fails
+              # roughly one run in eight under load. It reached CI three times on 2026-08-17
+              # alone. At six to twelve pull requests a day that is one or two a day going red
+              # for a reason no agent can reproduce, each needing a human to press a button.
+              # Nothing here presses buttons, so every one of them would sit until the
+              # seven-day abandon sweep.
+              #
+              # So: re-run once, and only believe the second answer. A real failure fails
+              # twice and reaches the author a sweep later; a one-in-eight flake becomes
+              # one-in-sixty-four, which survives a fortnight unattended.
+              #
+              # This is mitigation, not a fix, and it is deliberately bounded at one attempt:
+              # a retry loop would hide a genuinely broken build forever. The marker comment
+              # makes each retry visible, so a pattern of them is evidence rather than noise.
+              # #46 stays open, and the real fix is catch-up on reconnect in runtime/sync/.
+              if [ -n "$run_id" ] && ! printf '%s' "$comments" | grep -q "test-retry:${sha}"; then
+                echo "#${n}: \`test\` failed on ${sha} — re-running once before believing it"
+                if gh run rerun "$run_id" --repo "$GH_REPO" --failed >/dev/null 2>&1; then
+                  gh pr comment "$n" --repo "$GH_REPO" --body \
+                    "\`test\` failed on \`${sha}\` and has been re-run once. This repository has a known flake in the sync tests (#46) that fails about one run in eight, so a single red build is not yet evidence of anything. If the re-run fails too, the findings go to whoever wrote this and the pull request stops here.
+
+          <!-- test-retry:${sha} -->" || true
+                  acted=$((acted + 1))
+                  continue
+                fi
+                echo "::warning::Could not re-run the failed build for #${n}; treating this failure as real."
+              fi
+
+              # ---- it failed twice, or could not be re-run: tell the author ---------------
+              if printf '%s' "$comments" | grep -q "build-relay:${sha}"; then
+                echo "#${n}: build failing and already relayed for ${sha}"
+                continue
+              fi
+
+              echo "#${n}: \`test\` failed again on ${sha} — relaying to the author"
               log=""
               [ -n "$run_id" ] && log=$(gh run view "$run_id" --repo "$GH_REPO" --log-failed 2>/dev/null | tail -c 3000 || true)
 
