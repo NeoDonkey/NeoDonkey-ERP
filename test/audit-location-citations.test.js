@@ -322,3 +322,38 @@ test('Execution refusals and violations carry accurate file, line, and embedded 
     assertValidLocation(cite.file, cite.line, `citation in detail "${ungovernedResult.detail}"`);
   }
 });
+
+// ---------------------------------------------------------------------------- Documentation File Citations Test
+
+test('Documentation files cite existing codebase files', () => {
+  const docsToScan = ['docs/COMPROMISES.md', 'docs/NEXT.md', 'docs/AUDIT.md'];
+  const pathRe = /\b(?:runtime|operating-model|templates|test|docs|demo|release|mcp)\/[a-zA-Z0-9_./-]+\.(?:js|mjs|json|md)\b/g;
+
+  // Explicitly documented exit-path, hypothetical, or future files
+  const EXEMPT = new Set([
+    'runtime/read/sqlite.js',
+    'operating-model/authorities.json',
+    'operating-model/information/salary.md',
+    'operating-model/index.json',
+  ]);
+
+  let checkedCount = 0;
+  for (const docFile of docsToScan) {
+    const absDoc = join(REPO, docFile);
+    if (!existsSync(absDoc)) continue;
+    const content = readFileSync(absDoc, 'utf8');
+    let match;
+    while ((match = pathRe.exec(content)) !== null) {
+      const refPath = match[0];
+      if (EXEMPT.has(refPath)) continue;
+      const absRef = join(REPO, refPath);
+      assert.ok(
+        existsSync(absRef),
+        `file "${refPath}" cited in "${docFile}" must exist on disk`
+      );
+      checkedCount++;
+    }
+  }
+
+  assert.ok(checkedCount > 20, `verified ${checkedCount} file path citations across docs`);
+});

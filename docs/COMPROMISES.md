@@ -820,10 +820,9 @@ dependency to a convenience, and each is enforced rather than intended:
 
 **Superseded by #15.** The signature-verification fix this section used to name as future work has
 shipped; #15 is where its residual risks live, and the first of them is still the first install.
-**One stale artefact of that supersession is a live defect:** `runtime/ui/views.js` still tells the
-user, on the "This runtime" screen, that *"signature verification against a pinned NeoDonkey
-release key is v0.2, and until it ships, first install is trust-on-first-use."* The first half is
-no longer true. See #15 residual risk 4, and gate condition 10.
+The UI block (`releaseBlock` in `runtime/ui/views.js`) renders the signature verification status
+('unsigned', 'first-use', or 'verified'), and the stale "verification is v0.2" text was removed
+when #15 residual risk 4 was closed. See #15 residual risk 4, and gate condition 10.
 
 **Owner:** CTO. **Revisit:** with #15.
 
