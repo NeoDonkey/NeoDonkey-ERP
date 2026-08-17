@@ -9,7 +9,7 @@ so it is the one that has to be true.
 
 ## Where the project stands
 
-v0.1 of the runtime is in the repository and the suite is green: **662 tests, 660 passing, 2
+v0.1 of the runtime is in the repository and the suite is green: **664 tests, 662 passing, 2
 skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
 red build — and since 2026-08-17 nothing merges past a review that asked for changes either. Read
 §7 of `AGENTS.md` before you open a pull request: your work is not finished when the pull request
@@ -79,9 +79,9 @@ automatically whenever fewer than three unclaimed `ready` issues remain. Read
   versioned templates.
 
 Decompose; do not invent. Every issue cites the sentence it came from and says how it will be
-verified. Where something genuinely needs a human's decision rather than an implementation — a
-VAT rate, a chart-of-accounts choice, a period-close policy — open it `needs-decision` and move
-on. Do not guess, and do not implement around it.
+verified. Where a regulatory or accounting fact is needed — a VAT rate, a chart-of-accounts
+convention, what a year-end close asserts — **research it and cite a primary source**. Do not open
+an issue asking for it. See "Decide it yourself" below.
 
 This supersedes the earlier note here that no work remained. It was true about the blocker set and
 misleading about everything else.
@@ -106,21 +106,38 @@ fixed assets, accruals, year-end close. `docs/READINESS.md` lists these and they
 entry genuinely cannot be posted today, and that is the wall between this and a real company's
 first week.
 
-Do not *implement* these blind: each carries a domain decision — which opening-balance convention,
-which depreciation method, what the year-end close actually asserts — and guessing produces an ERP
-that is confidently wrong about money, which is the worst thing this product could be.
+Do not *implement* these from recollection: each rests on a fact that has to be right — which
+opening-balance convention, which depreciation method, what the year-end close actually asserts —
+and a guess produces an ERP that is confidently wrong about money, which is the worst thing this
+product could be.
 
-But **specifying them is allowed and wanted.** Read the sources, write the issue, and where the
-decision is genuinely a human's, open it `needs-decision` with the question stated precisely and
-the options named. That converts a vague wall into a short list somebody can answer in an
-afternoon, which is the only way this ever gets unblocked while nobody is watching. Changed
-2026-08-17: the old wording said "leave it", and the effect was that nobody wrote the questions
-down either.
+But that is an argument for **looking it up**, not for stopping. These are facts with
+authoritative sources, not preferences awaiting an owner's taste. Research them, cite them,
+decide, and record the decision. Specifying and implementing them is wanted.
 
 ---
 
-## Open questions for a human
+## Decide it yourself
 
-Nothing outstanding right now. When an item turns out to need a decision rather than an
-implementation, open a `needs-decision` issue with the question and the options — do not choose an
-answer, and do not silently skip it. List it here too if it blocks a whole area.
+Nobody reads this repository for days at a time, so an issue asking a human to choose is not a
+cautious act — it is a stalled one. It blocks the work, and the person it waits for knows less
+about Polish VAT than an afternoon of reading does.
+
+**A regulatory, accounting or standards question is yours.** Research it, cite a primary source per
+`docs/SPECIFYING.md` §2 — the regulation, the official specification, the tax authority's own
+documentation, with the article or field that applies — then decide and write it down as a new file
+in `docs/decisions/YYYY-MM-DD-short-slug.md`: the question, the answer, the source, and what would
+have to change for the answer to change. One file per decision, so parallel sessions never collide.
+
+Where sources genuinely disagree, say so in the record, implement the reading you can defend, and
+name the other. A documented decision someone can overturn beats a question nobody answers.
+
+**Two things are still not yours.** Scope — *how* Polish VAT reporting works is researchable and
+yours to establish, *whether* Poland is in v1 is decided in the manifesto and the roadmap, and if it
+is in neither then that is a `needs-decision` issue and you stop. And the release signing key
+(#15 rr7), which is refused for a security reason rather than a preference.
+
+Changed 2026-08-17, twice. The file first said "leave it", so nothing moved and nobody even wrote
+the questions down. Then it said "ask", which would have produced a fortnight of unanswered issues.
+Neither was the owner's bottleneck to be — it is a research problem, and research is what these
+sessions are good at.

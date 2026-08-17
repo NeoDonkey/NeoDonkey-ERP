@@ -219,10 +219,41 @@ jobs:
           that demonstrates it — and carries an `area:` label and a priority. Label it `ready`
           only when it is genuinely implementable as written.
 
-          Where something truly needs a human's decision rather than an implementation — a VAT
-          rate, a chart-of-accounts choice, a period-close policy — open it as `needs-decision`
-          and move on. Do NOT guess, and do NOT implement around it. One clear question a human
-          can answer in a minute is worth more than a plausible answer nobody authorised.
+          RESEARCH IT. DO NOT ASK.
+
+          A VAT rate, a chart-of-accounts convention, a depreciation method, what a year-end
+          close must assert, which fields EN-16931 makes mandatory — these are not opinions and
+          they are not the repository owner's to supply. They are facts with authoritative
+          sources, and you can look them up. Use the web. You will find better answers than a
+          question in an issue would produce, and you will find them today rather than in a
+          fortnight.
+
+          Nobody is reading this repository for days at a time. An issue asking a human to
+          choose is not a cautious act, it is a stalled one — it blocks the work, and the person
+          it waits for knows less about Polish VAT than a search does.
+
+          So: research, cite, decide, and write the decision down.
+
+            - Cite a PRIMARY source, per docs/SPECIFYING.md §2: the regulation itself, the
+              official specification, the tax authority's own documentation — with the article,
+              section or field that applies. "EN-16931 requires it" is not a citation.
+              "EN-16931-1:2017 §6.1, BT-31, mandatory when the seller is VAT-registered" is.
+            - Record it as a NEW file, `docs/decisions/YYYY-MM-DD-short-slug.md`: the question,
+              the answer, the source, and what would have to change for the answer to change.
+              One file per decision, so parallel sessions never collide.
+            - Where sources genuinely disagree, say so in the record, implement the reading you
+              can defend, and name the other. A documented decision someone can overturn beats
+              a question nobody answers.
+
+          WHAT IS STILL NOT YOURS
+
+          Scope, and only scope. *How* Polish VAT reporting works is researchable and yours to
+          establish. *Whether* Poland is in v1 is decided in the manifesto and the roadmap — if
+          the answer is in neither, that is a `needs-decision` issue and you stop.
+
+          And never the release signing key (#15 rr7). That is refused for a security reason,
+          not a preference: generating one inside a public repository would be worse than
+          shipping none.
 
           Three or four well-sourced issues is a good session. Twenty vague ones is worse than
           none, because the next session cannot tell which are real.
