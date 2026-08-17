@@ -169,7 +169,7 @@ suggests, and the parser, ledger, live layer and sync path are built and tested.
 ## 6. Verifying
 
 ```bash
-npm test          # 662 tests, about 30 seconds. Must be green before opening a PR.
+npm test          # 664 tests, about 30 seconds. Must be green before opening a PR.
 npm run demo      # the acceptance demo, end to end
 npm run ui        # then open http://localhost:8080
 ```
