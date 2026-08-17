@@ -78,6 +78,7 @@ jobs:
         run: |
           # Not `set -o pipefail` + fail here. The next step decides, because a failure whose
           # only casualty is a known flake must not stop the queue — see test/known-flaky.txt.
+          set +e +o pipefail
           node --test --test-concurrency=2 "test/*.test.js" 2>&1 | tee "${RUNNER_TEMP}/suite.txt"
           echo "rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
