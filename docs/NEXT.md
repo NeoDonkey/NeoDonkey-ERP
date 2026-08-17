@@ -9,7 +9,7 @@ so it is the one that has to be true.
 
 ## Where the project stands
 
-v0.1 of the runtime is in the repository and the suite is green: **658 tests, 656 passing, 2
+v0.1 of the runtime is in the repository and the suite is green: **662 tests, 660 passing, 2
 skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
 red build.
 
@@ -30,7 +30,7 @@ missing — most gaps are already named there, with a category and a cost.
 
 All implementation items in the "our shortfall" category (including compromise #13) have been closed!
 
-The codebase now enforces strict architectural boundaries for UI field display derivation via the `## Displayed by` POLISM grammar section, all headline status claims and signed runtime release manifest verification in `README.md` and `docs/ARCHITECTURE.md` have been verified and unit tested in `test/readme-claims.test.js`, and all refusal paths and authority checks in `runtime/polism/` have been verified and unit tested in `test/c-polism.test.js`.
+The codebase now enforces strict architectural boundaries for UI field display derivation via the `## Displayed by` POLISM grammar section, all headline status claims and signed runtime release manifest verification in `README.md` and `docs/ARCHITECTURE.md` have been verified and unit tested in `test/readme-claims.test.js`, all refusal paths and authority checks in `runtime/polism/` have been verified and unit tested in `test/c-polism.test.js`, and documentation file path citations across `docs/COMPROMISES.md`, `docs/NEXT.md`, and `docs/AUDIT.md` are continuously verified by automated unit tests in `test/audit-location-citations.test.js`.
 
 ---
 
