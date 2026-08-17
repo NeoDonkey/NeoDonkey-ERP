@@ -41,3 +41,22 @@ Three times in one day is a pattern worth naming: **the failure mode of this who
 doing the wrong thing, it is being unable to tell "not now" from "not ever".** The listing query,
 the capability checks and the merge calls each learned it separately. Anything added here later
 should be written knowing it.
+
+## And a fourth: the queue deadlocked after the first merge
+
+`#49` had a clean review, a green suite and auto-merge enabled, and was going nowhere. GitHub's
+answer was `mergeStateStatus: BEHIND`.
+
+Branch protection on this repository is `strict`: a pull request must be up to date with main
+before it can merge. So every time one lands, every other open pull request goes BEHIND — and
+nothing here updated branches. The loop could review, approve and queue perfectly, and still land
+exactly one change per human intervention. Two weeks unattended would have produced one merge and
+a queue of correct work sitting behind it.
+
+`merge-sweeper` now updates a stale branch itself, one per sweep. One, because updating a branch is
+a new commit that re-runs `test` and the review, and doing all of them at once would spend the
+day's provider quota on merge commits. The next sweep is twenty minutes away and takes the next one.
+
+That makes four failures in one day whose shape was the same: something could not distinguish a
+state that resolves itself from one that never will. The listing query, the capability checks, the
+merge calls, and now the queue itself.

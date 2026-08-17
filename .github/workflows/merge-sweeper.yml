@@ -120,11 +120,12 @@ jobs:
           # loudly instead — hence the check.
           list_prs() {
             gh pr list --repo "$GH_REPO" --state open --limit 100 \
-              --json number,isDraft,mergeable,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
+              --json number,isDraft,mergeable,mergeStateStatus,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
               --jq '.[] | {
                       n: .number,
                       draft: .isDraft,
                       mergeable: .mergeable,
+                      state: .mergeStateStatus,
                       automerge: (.autoMergeRequest != null),
                       labels: [.labels[].name],
                       ref: .headRefName,
@@ -172,6 +173,7 @@ jobs:
             n=$(printf '%s'      "$j" | jq -r '.n')
             draft=$(printf '%s'  "$j" | jq -r '.draft')
             mergeable=$(printf '%s' "$j" | jq -r '.mergeable')
+            mstate=$(printf '%s' "$j" | jq -r '.state')
             automerge=$(printf '%s'  "$j" | jq -r '.automerge')
             labels=$(printf '%s' "$j" | jq -r '.labels | join(" ")')
             ref=$(printf '%s'    "$j" | jq -r '.ref')
@@ -354,6 +356,27 @@ jobs:
 
           <!-- build-relay:${sha} -->" || true
               acted=$((acted + 1))
+              continue
+            fi
+
+            # ---- 1b. up to date with main -------------------------------------------------
+            #
+            # Branch protection here is `strict`: a pull request must be up to date with main
+            # before it can merge. So every time one lands, every other open pull request goes
+            # BEHIND — and nothing in this repository updated branches, so the queue deadlocked
+            # after the first merge. #49 sat with a clean review, a green suite and auto-merge
+            # enabled, going nowhere, purely because main had moved underneath it.
+            #
+            # One per sweep. Updating a branch is a new commit, which re-runs `test` and the
+            # review, so doing all of them at once would spend the day's provider quota on
+            # merge commits. The next sweep is twenty minutes away and takes the next one.
+            if [ "$mstate" = "BEHIND" ]; then
+              echo "#${n}: behind main — updating the branch so it can merge"
+              if gh api -X PUT "repos/${GH_REPO}/pulls/${n}/update-branch" >/dev/null 2>&1; then
+                acted=$((acted + 1))
+              else
+                echo "::warning::#${n} is behind main and could not be updated; it cannot merge until it is."
+              fi
               continue
             fi
 
