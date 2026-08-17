@@ -48,6 +48,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          # Converting a pull request to draft is the one action here that GITHUB_TOKEN cannot
+          # perform. It is a GitHub App token, and the `convertPullRequestToDraft` mutation is
+          # not available to Apps: the first live run of this workflow logged
+          # "GraphQL: Resource not accessible by integration (convertPullRequestToDraft)",
+          # applied the label, posted a comment saying it had drafted #29, and left the pull
+          # request open. A user token can do it, so try that first and fall back.
+          AGENT_PAT: ${{ secrets.AGENT_PAT }}
           # How long a pull request waits for a review verdict before it merges without one.
           # Long enough that a review in progress is never overtaken — the reviewer's own
           # timeout is 12 minutes — and short enough that a dead provider costs an hour, not
@@ -61,6 +68,24 @@ jobs:
           set -uo pipefail
           now=$(date -u +%s)
           acted=0
+
+          # Draft a pull request, printing "yes" or "no". Whether it worked decides what the
+          # comment says: a message claiming the pull request was drafted when it is still open
+          # is worse than no message, because the next reader trusts it.
+          #
+          # The label is the real gate in either case — `review` skips a pull request labelled
+          # `review:parked`, and rule 1 below never releases one — so a failure here degrades
+          # the signal rather than the safety.
+          draft_pr() {
+            if [ -n "${AGENT_PAT:-}" ] \
+               && GH_TOKEN="$AGENT_PAT" gh pr ready "$1" --repo "$GH_REPO" --undo >/dev/null 2>&1; then
+              printf 'yes'
+            elif gh pr ready "$1" --repo "$GH_REPO" --undo >/dev/null 2>&1; then
+              printf 'yes'
+            else
+              printf 'no'
+            fi
+          }
 
           # The cheap fields for every open pull request.
           #
@@ -145,9 +170,14 @@ jobs:
             if [ "$mergeable" = "CONFLICTING" ] && [ "$hours" -ge "$CONFLICT_HOURS" ]; then
               echo "#${n}: conflicting for ${hours}h — drafting"
               gh pr edit "$n" --repo "$GH_REPO" --add-label 'stale:conflicting' || true
-              gh pr ready "$n" --repo "$GH_REPO" --undo || true
+              drafted=$(draft_pr "$n")
+              if [ "$drafted" = "yes" ]; then
+                opener="Converted to draft, and labelled \`stale:conflicting\`:"
+              else
+                opener="Labelled \`stale:conflicting\` (could not convert it to draft — see the run log):"
+              fi
               gh pr comment "$n" --repo "$GH_REPO" --body \
-                "Converted to draft: \`${ref}\` has conflicted with main for ${hours} hours. No agent in this repository rebases, so this cannot merge however green the review is. Whoever picks it up: rebase on main, push, and mark it ready — that re-runs the review from scratch." || true
+                "${opener} \`${ref}\` has conflicted with main for ${hours} hours. No agent in this repository rebases, so this cannot merge however green the review is — and while it conflicts GitHub will not run \`test\` or \`review\` on it at all, because it cannot compute a merge commit, so it cannot even be assessed. Whoever picks it up: rebase on main, push, and mark it ready." || true
               acted=$((acted + 1))
               continue
             fi
@@ -162,13 +192,14 @@ jobs:
                 if [ "$hours" -ge "$GHOSTED_HOURS" ]; then
                   echo "#${n}: refused, no push for ${hours}h — parking"
                   gh pr edit "$n" --repo "$GH_REPO" --add-label 'review:parked' || true
-                  gh pr ready "$n" --repo "$GH_REPO" --undo || true
+                  drafted=$(draft_pr "$n")
+                  [ "$drafted" = "yes" ] && how="Parked as a draft" || how="Parked (labelled \`review:parked\`; could not convert it to draft — see the run log)"
                   gh pr comment "$n" --repo "$GH_REPO" --body \
-                    "Parked: the review asked for changes ${hours} hours ago and no push to \`${ref}\` followed. Either the findings never reached an agent, or the session that wrote this had already finished and could not be resumed, or it decided the findings were wrong without saying so. The findings are in the comments above; nothing here merges until a review comes back \`VERDICT: CLEAN\`." || true
+                    "${how}: the review asked for changes ${hours} hours ago and no push to \`${ref}\` followed. Either the findings never reached an agent, or the session that wrote this had already finished and could not be resumed, or it decided the findings were wrong without saying so. The findings are in the comments above; nothing here merges until a review comes back \`VERDICT: CLEAN\`." || true
                   gh issue create --repo "$GH_REPO" \
                     --title "Review on #${n} was refused and never answered" \
                     --label 'blocked' \
-                    --body "$(printf 'Pull request #%s was refused by the reviewer and received no push within %s hours. It is now parked as a draft.\n\nCheck which of these it is, because they need different fixes:\n\n- The relay comment says it delivered the findings, and Jules did nothing. The session had most likely already completed, so `sendMessage` was accepted but idle. The fallback that starts a session on the branch is the thing to look at.\n- The relay comment says there was no session id in the body. This came from a lane that is not Jules, so there is no author to send findings to and it will always land here.\n- There is no relay comment at all. `review` reached a verdict and then failed; see its run log.\n' "$n" "$GHOSTED_HOURS")" || true
+                    --body "$(printf 'Pull request #%s was refused by the reviewer and received no push within %s hours. It is now parked and labelled `review:parked`.\n\nCheck which of these it is, because they need different fixes:\n\n- The relay comment says it delivered the findings, and Jules did nothing. The session had most likely already completed, so `sendMessage` was accepted but idle. The fallback that starts a session on the branch is the thing to look at.\n- The relay comment says there was no session id in the body. This came from a lane that is not Jules, so there is no author to send findings to and it will always land here.\n- There is no relay comment at all. `review` reached a verdict and then failed; see its run log.\n' "$n" "$GHOSTED_HOURS")" || true
                   acted=$((acted + 1))
                 else
                   echo "#${n}: refused ${hours}h ago — waiting for a push"
