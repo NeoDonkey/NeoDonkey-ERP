@@ -40,15 +40,13 @@ file is how you get conflicts instead of progress.
 
 ## The next item
 
-**Error messages that cite a location.** Several refusals quote a file, a line and an
-expectation. Nothing asserts those references are still accurate, so they can drift silently
-into lies that read like precision.
+**The skipped tests.** The suite reports 658 tests with 2 skipped (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
 
 ---
 
 ## After that
 
-- **The skipped tests.** The suite reports 657 tests with 2 skipped (benchmark/stress tests requiring `NEODONKEY_BENCH=1` / `NEODONKEY_BIG_PACK=1`).
+No open items in the immediate audit queue.
 
 ---
 
@@ -56,6 +54,8 @@ into lies that read like precision.
 
 Newest first. A finding stays here until lane A closes it, then it is marked closed with the
 commit that did so.
+
+- **Verified error message location citations (2026-08-13):** Unit tests were added in `test/audit-location-citations.test.js` continuously asserting that all AST source locations for entities, fields, predicates, invariants, processes, and authorities across `operating-model/` and `templates/` point to existing files and valid 1-based line bounds containing valid content. Verified that parser diagnostics, execution refusal objects, and embedded `file.md:line` citations in error details point to valid files and line numbers.
 
 - **Verified POLISM refusal paths and authority checks (2026-08-13):** Comprehensive unit tests were added to `test/c-polism.test.js` exercising previously untested refusal paths in `runtime/polism/execute.js` and `runtime/polism/parse.js`, including invalid operation strings, entity-scope authority refusals when no process rule governs the operation (`matching.length === 0`), staged change validation failures in step 8 of `evaluate()` (missing required fields, invalid enum values, or non-exact money strings), predicate recursion depth limits (> 32), same-event create/delete and delete/change conflicts, self-targeting update refusals, create-on-demand key missing refusals, whole-document comparison diagnostics, missing referenced document `from` path copy/add refusals, and non-number/non-money counter refusals.
 
