@@ -1,0 +1,139 @@
+name: state-of-the-project
+
+# One issue, rewritten daily, that answers "what happened while I was away".
+#
+# The owner is away for days to weeks at a time and is explicitly not to be a bottleneck. That
+# only works if returning is cheap. Reconstructing a fortnight from fifty merged pull requests is
+# not cheap, and the parts most worth knowing — what merged without a review, what the sessions
+# decided on their own authority, what compromises were taken — are exactly the parts that do not
+# announce themselves in a commit list.
+#
+# So this rewrites the body of a single issue rather than commenting. A comment thread would grow
+# to a hundred entries and bury the current state; an issue body is always the latest answer, and
+# rewriting it conflicts with nothing, which matters when three sessions are running.
+#
+# It reports. It decides nothing, changes no code, and blocks no merge. If it is wrong, the worst
+# case is a misleading summary — which is why every section links to the query behind it, so any
+# number here can be checked rather than believed.
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: state-of-the-project
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Write the state of the project
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: 'State of the project'
+        run: |
+          set -uo pipefail
+          since=$(date -u -d '7 days ago' +%Y-%m-%d 2>/dev/null || date -u -v-7d +%Y-%m-%d)
+          out=/tmp/state.md
+
+          {
+            printf '**This issue is a generated report, not work.** Do not take it, do not close it, do not open a pull request against it. It is rewritten daily in place; anything you write in the body will be overwritten. If something here is wrong, fix the query in `.github/workflows/state-of-the-project.yml`.\n\n'
+            printf '_Everything below is a query you can re-run; nothing here is asserted._\n\n'
+            printf '**As of %s.** Covering the last 7 days (since %s).\n\n' "$(date -u '+%Y-%m-%d %H:%M UTC')" "$since"
+
+            # ---- the part that matters most, first ------------------------------------------
+            printf -- '---\n\n## Merged without a review\n\n'
+            unrev=$(gh pr list --repo "$GH_REPO" --state merged --limit 100 \
+                      --label 'merged:unreviewed' --json number,title,mergedAt \
+                      --jq "[.[] | select(.mergedAt >= \"${since}\")] | .[] | \"- #\(.number) \(.title)\"" 2>/dev/null || true)
+            if [ -n "$unrev" ]; then
+              printf 'These merged on `test` alone, because no review verdict arrived within the grace period — a provider outage or rate limit. The tests passed; the AGENTS.md checks were never applied. **Worth reading first.**\n\n%s\n\n' "$unrev"
+            else
+              printf 'None. Every merge in this window carried a review verdict.\n\n'
+            fi
+
+            # ---- decisions the sessions took on their own authority --------------------------
+            printf -- '---\n\n## Decisions taken without you\n\n'
+            decisions=$(git log --since="$since" --diff-filter=A --name-only --format='' -- docs/decisions/ 2>/dev/null | grep -v '^$' | sort -u || true)
+            if [ -n "$decisions" ]; then
+              printf 'Regulatory and accounting questions the sessions researched and settled. Each names its primary source and what would have to change for the answer to change. **This is the review surface for work done in your absence.**\n\n'
+              while read -r f; do
+                [ -z "$f" ] && continue
+                title=$(head -1 "$f" 2>/dev/null | sed 's/^#* *//')
+                printf -- '- `%s` — %s\n' "$f" "${title:-（no title）}"
+              done <<< "$decisions"
+              printf '\n'
+            else
+              printf 'None recorded. If sessions have been implementing regulatory work without recording decisions, that is worth checking — see AGENTS.md §6.\n\n'
+            fi
+
+            # ---- compromises, which AGENTS.md calls the only real failure mode ---------------
+            printf -- '---\n\n## Compromises recorded\n\n'
+            comp=$(git log --since="$since" --format='- %h %s' -- docs/COMPROMISES.md 2>/dev/null || true)
+            if [ -n "$comp" ]; then
+              printf 'Commits touching the register. An entry added is healthy; an entry marked closed deserves checking against the code, because the register has been wrong about itself before (#44).\n\n%s\n\n' "$comp"
+            else
+              printf 'The register was not touched. Healthy if nothing was traded away; worth a look if a lot shipped, since an unrecorded compromise is the failure mode this project treats as real.\n\n'
+            fi
+
+            # ---- what shipped ----------------------------------------------------------------
+            printf -- '---\n\n## Merged\n\n'
+            merged=$(gh pr list --repo "$GH_REPO" --state merged --limit 100 --json number,title,mergedAt \
+                       --jq "[.[] | select(.mergedAt >= \"${since}\")] | .[] | \"- #\(.number) \(.title)\"" 2>/dev/null || true)
+            printf '%s\n\n' "${merged:-Nothing merged in this window. If that is unexpected, check the \`merge-sweeper\` and \`jules-scheduled-session\` runs.}"
+
+            # ---- what is stuck ---------------------------------------------------------------
+            printf -- '---\n\n## Waiting for a human\n\n'
+            stuck=$(gh pr list --repo "$GH_REPO" --state open --limit 100 \
+                      --json number,title,labels,isDraft \
+                      --jq '.[] | select((.labels[].name | test("review:parked|stale:conflicting")) // false) | "- #\(.number) \(.title)"' 2>/dev/null | sort -u || true)
+            blocked=$(gh issue list --repo "$GH_REPO" --state open --label blocked --limit 50 \
+                      --json number,title --jq '.[] | "- #\(.number) \(.title)"' 2>/dev/null || true)
+            if [ -n "$stuck$blocked" ]; then
+              printf '%s\n%s\n\n' "$stuck" "$blocked"
+            else
+              printf 'Nothing. No parked pull request, no conflicted branch, no blocked issue.\n\n'
+            fi
+
+            # ---- the queue -------------------------------------------------------------------
+            printf -- '---\n\n## The queue\n\n'
+            ready=$(gh issue list --repo "$GH_REPO" --state open --label ready --limit 100 --json number --jq 'length' 2>/dev/null || echo '?')
+            openpr=$(gh pr list --repo "$GH_REPO" --state open --limit 100 --json isDraft --jq '[.[]|select(.isDraft==false)]|length' 2>/dev/null || echo '?')
+            printf -- '- **%s** issues labelled `ready`, **%s** pull requests open.\n' "$ready" "$openpr"
+            printf -- '- Below 3 ready, sessions specify from the roadmap instead of implementing (AGENTS.md §6). A number stuck at 0 for days means specifying is failing — read the last few pull requests to see why.\n\n'
+
+            # ---- the gate, once something scores it -----------------------------------------
+            printf -- '---\n\n## The v1.0 gate\n\n'
+            if [ -f docs/GATE.md ]; then
+              printf 'From `docs/GATE.md`:\n\n'
+              grep -E '^\s*[-|].*(green|red|partial)' docs/GATE.md | head -20 || cat docs/GATE.md | head -20
+              printf '\n'
+            else
+              printf '`docs/GATE.md` does not exist yet — see #57. Until it does, nothing measures how close this is to publishable, and the ten conditions in `docs/ROADMAP-V1.md` Part 2 have to be checked by hand.\n\n'
+            fi
+
+            printf -- '---\n\n_If this summary looks wrong, it probably is: it is generated from labels and git history, both of which agents write. The queries are in `.github/workflows/state-of-the-project.yml`._\n'
+          } > "$out"
+
+          existing=$(gh issue list --repo "$GH_REPO" --state open --search "\"$TITLE\" in:title" \
+            --json number --jq '.[0].number // empty' 2>/dev/null || true)
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --repo "$GH_REPO" --body-file "$out" --add-label meta && echo "updated #${existing}"
+          else
+            gh issue create --repo "$GH_REPO" --title "$TITLE" --body-file "$out" --label meta && echo "created"
+          fi
