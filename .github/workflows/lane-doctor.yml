@@ -53,6 +53,13 @@ jobs:
           fail=0
           report() { printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; echo "$1"; }
 
+          # A 5xx or a dead socket is the service having a bad minute, not a capability that
+          # has been taken away, and the two need opposite responses: one is "wait", the other
+          # is "go and fix the token". Treating them alike is how this check earns a reputation
+          # for crying wolf — on 2026-08-17 GitHub returned 503 on one probe and Google 500 on
+          # another, both transient, and the run reported two lost capabilities.
+          transient() { case "$1" in 000|5??) return 0 ;; *) return 1 ;; esac; }
+
           report '### Agent token (`AGENT_PAT`)'
           report ''
 
@@ -81,6 +88,8 @@ jobs:
           code=$(api GET "/repos/${GH_REPO}")
           if [ "$code" = "200" ]; then
             report '- read the repository: **yes**'
+          elif transient "$code"; then
+            report "- read the repository: **could not test** (HTTP ${code} — the service is unwell, not the token)."
           else
             report "- read the repository: **no** (HTTP ${code}) — the token is expired or revoked."
             fail=1
@@ -97,6 +106,8 @@ jobs:
             if [ "$code" = "201" ]; then
               report '- push a branch: **yes**'
               api DELETE "/repos/${GH_REPO}/git/refs/heads/${probe_ref}" >/dev/null
+            elif transient "$code"; then
+              report "- push a branch: **could not test** (HTTP ${code} — transient)."
             else
               report "- push a branch: **no** (HTTP ${code}: $(jq -r '.message // "?"' /tmp/body.json)) — the lane can verify a fix but never land it. This is the failure that produced eight duplicate issues in August 2026."
               fail=1
@@ -120,6 +131,8 @@ jobs:
               report '- comment on an issue: **yes**'
               cid=$(jq -r '.id' /tmp/body.json)
               api DELETE "/repos/${GH_REPO}/issues/comments/${cid}" >/dev/null
+            elif transient "$code"; then
+              report "- comment on an issue: **could not test** (HTTP ${code} — transient)."
             else
               report "- comment on an issue: **no** (HTTP ${code}) — a relayed review cannot be answered and findings cannot be disputed."
               fail=1
@@ -164,6 +177,11 @@ jobs:
               echo "detail=the repository is not a connected Jules source" >> "$GITHUB_OUTPUT"
               exit 0
             fi
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          elif case "$code" in 000|5??) true ;; *) false ;; esac; then
+            # Google having a bad minute is not a revoked key. Reported, not counted: the
+            # 500 seen on 2026-08-17 cleared on the next attempt sixty seconds later.
+            report "- key accepted: **could not test** (HTTP ${code} — the API is unwell, not the key)."
             echo "ok=true" >> "$GITHUB_OUTPUT"
           else
             report "- key accepted: **no** (HTTP ${code}) — expired, revoked, or out of quota."

@@ -515,8 +515,22 @@ jobs:
           # `--auto` hands the pull request to GitHub, which merges it only once every
           # required check is green. Branch protection, not this line, decides — a clean
           # review does not override a red `test`.
-          if gh pr merge "$PR" --repo "$GH_REPO" --auto --squash --delete-branch; then
-            echo "clean review — queued for merge behind the required checks"
+          # Retried, because GitHub returned 503 on this exact call on #49 on 2026-08-17 and a
+          # single bad minute should not cost a clean review its merge.
+          for attempt in 1 2 3; do
+            if gh pr merge "$PR" --repo "$GH_REPO" --auto --squash --delete-branch 2>/tmp/merge.err; then
+              echo "clean review — queued for merge behind the required checks"
+              exit 0
+            fi
+            echo "attempt ${attempt}: $(tr -d '\n' < /tmp/merge.err | head -c 160)"
+            [ "$attempt" -lt 3 ] && sleep 10
+          done
+
+          # A transient failure is not this pull request's problem: merge-sweeper sweeps every
+          # twenty minutes and will queue it. Say so and stay green, rather than leaving a red
+          # check on a pull request that is about to merge anyway.
+          if grep -qE '\b(500|502|503|504)\b|No server is currently available' /tmp/merge.err; then
+            echo "::warning::Could not queue the merge — GitHub returned a transient error three times. merge-sweeper will pick this up within 20 minutes."
             exit 0
           fi
           # Never silent. A queue step that fails and says nothing is how #48 and #49 sat

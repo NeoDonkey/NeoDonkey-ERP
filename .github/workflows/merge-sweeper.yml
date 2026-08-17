@@ -120,11 +120,12 @@ jobs:
           # loudly instead — hence the check.
           list_prs() {
             gh pr list --repo "$GH_REPO" --state open --limit 100 \
-              --json number,isDraft,mergeable,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
+              --json number,isDraft,mergeable,mergeStateStatus,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
               --jq '.[] | {
                       n: .number,
                       draft: .isDraft,
                       mergeable: .mergeable,
+                      state: .mergeStateStatus,
                       automerge: (.autoMergeRequest != null),
                       labels: [.labels[].name],
                       ref: .headRefName,
@@ -172,6 +173,7 @@ jobs:
             n=$(printf '%s'      "$j" | jq -r '.n')
             draft=$(printf '%s'  "$j" | jq -r '.draft')
             mergeable=$(printf '%s' "$j" | jq -r '.mergeable')
+            mstate=$(printf '%s' "$j" | jq -r '.state')
             automerge=$(printf '%s'  "$j" | jq -r '.automerge')
             labels=$(printf '%s' "$j" | jq -r '.labels | join(" ")')
             ref=$(printf '%s'    "$j" | jq -r '.ref')
@@ -357,6 +359,27 @@ jobs:
               continue
             fi
 
+            # ---- 1b. up to date with main -------------------------------------------------
+            #
+            # Branch protection here is `strict`: a pull request must be up to date with main
+            # before it can merge. So every time one lands, every other open pull request goes
+            # BEHIND — and nothing in this repository updated branches, so the queue deadlocked
+            # after the first merge. #49 sat with a clean review, a green suite and auto-merge
+            # enabled, going nowhere, purely because main had moved underneath it.
+            #
+            # One per sweep. Updating a branch is a new commit, which re-runs `test` and the
+            # review, so doing all of them at once would spend the day's provider quota on
+            # merge commits. The next sweep is twenty minutes away and takes the next one.
+            if [ "$mstate" = "BEHIND" ]; then
+              echo "#${n}: behind main — updating the branch so it can merge"
+              if gh api -X PUT "repos/${GH_REPO}/pulls/${n}/update-branch" >/dev/null 2>&1; then
+                acted=$((acted + 1))
+              else
+                echo "::warning::#${n} is behind main and could not be updated; it cannot merge until it is."
+              fi
+              continue
+            fi
+
             # ---- 1. no verdict: release on `test` alone ------------------------------------
             if [ "$automerge" = "true" ]; then
               echo "#${n}: already queued for merge"
@@ -368,7 +391,25 @@ jobs:
               # same as no valve — which is exactly what happened while this file ran with
               # `contents: read`: the merge was refused, the failure was swallowed, and the run
               # still counted the pull request as acted on and exited green.
-              if gh pr merge "$n" --repo "$GH_REPO" --auto --squash --delete-branch; then
+              # Retry, and tell a bad minute from a real refusal. GitHub returned 503 on this
+              # exact call twice in a row on 2026-08-17 while its status page said all systems
+              # operational. Going red for that would mean a red badge every twenty minutes for
+              # as long as GitHub is unwell — "red for a reason nobody can act on", which this
+              # repository has decided is worse than no signal. The next sweep retries anyway,
+              # so a transient failure costs twenty minutes and nothing else.
+              merged=0
+              for attempt in 1 2 3; do
+                if gh pr merge "$n" --repo "$GH_REPO" --auto --squash --delete-branch 2>/tmp/merge.err; then
+                  merged=1; break
+                fi
+                echo "queue attempt ${attempt} for #${n}: $(tr -d '\n' < /tmp/merge.err | head -c 160)"
+                [ "$attempt" -lt 3 ] && sleep 10
+              done
+              if [ "$merged" = "0" ] && grep -qE '\b(500|502|503|504)\b|No server is currently available' /tmp/merge.err; then
+                echo "::warning::#${n} could not be queued for merge — GitHub returned a transient error three times. The next sweep in 20 minutes tries again; nothing is lost."
+                continue
+              fi
+              if [ "$merged" = "1" ]; then
                 gh pr comment "$n" --repo "$GH_REPO" --body \
                   "Queued for merge without a review. No verdict arrived within ${GRACE_MINUTES} minutes, so \`test\` is the only gate on this one. That is deliberate: a reviewer that is down must not be able to stop the project while nobody is watching. Check the \`review\` workflow if this keeps happening." || true
                 acted=$((acted + 1))
