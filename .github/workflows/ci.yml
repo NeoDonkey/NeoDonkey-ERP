@@ -78,6 +78,21 @@ jobs:
           set -o pipefail
           node --test --test-concurrency=2 "test/*.test.js" | tee "${RUNNER_TEMP}/suite.txt"
 
+      # The demo is the product, and until now nothing ran it.
+      #
+      # demo/sarah.mjs calls itself "the acceptance test for the whole MVP" and it earns that:
+      # it builds a company from nothing, then hands the folder to real `git` and real
+      # `ssh-keygen` and asks them what they think — `git fsck --strict`, signature verification
+      # on every commit, a checkout of the first commit yielding a readable company. It is also
+      # the single artefact you would put in front of anyone: the thing that shows an ERP with
+      # no server, no vendor and no dependencies actually working.
+      #
+      # It was run by no workflow, no test, and no npm script. It works today. Nothing would
+      # have said which commit broke it, and a demo discovered broken is a launch discovered
+      # broken. One second of runner time to keep it that way.
+      - name: The MVP acceptance demo still runs
+        run: node demo/sarah.mjs
+
       - name: The documented suite size matches the suite
         # The other half of test/documented-counts.test.js. That test proves the documents
         # agree with each other; only this step can prove they agree with reality, because a
