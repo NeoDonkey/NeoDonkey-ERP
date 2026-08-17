@@ -70,4 +70,50 @@ jobs:
         # two-core runner, thirty-two test files competing for those cores starve them and the
         # sync tests fail on timing rather than on behaviour. Two at a time is slower and honest.
         # Locally, `npm test` still uses the full machine.
-        run: node --test --test-concurrency=2 "test/*.test.js"
+        #
+        # `tee` keeps the summary for the next step. `pipefail` is what makes the pipe still
+        # fail the build when a test fails — without it the exit status would be `tee`'s.
+        shell: bash
+        run: |
+          set -o pipefail
+          node --test --test-concurrency=2 "test/*.test.js" | tee "${RUNNER_TEMP}/suite.txt"
+
+      - name: The documented suite size matches the suite
+        # The other half of test/documented-counts.test.js. That test proves the documents
+        # agree with each other; only this step can prove they agree with reality, because a
+        # test cannot count the run it is part of.
+        #
+        # This is the check that was missing for five days while README.md said 641, docs/NEXT.md
+        # said 658, and the suite ran 661. The audit lane found it eleven times and could not
+        # land the fix; nothing automated ever compared the two numbers.
+        #
+        # Adding a test fails this step until the documents are corrected. That is intended.
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Matched without the reporter's `ℹ` glyph, which is not worth depending on.
+          ran=$(grep -oE '[[:space:]]tests[[:space:]]+[0-9]+$' "${RUNNER_TEMP}/suite.txt" \
+                | tail -1 | grep -oE '[0-9]+$' || true)
+          if [ -z "$ran" ]; then
+            echo "Could not find the test total in the runner's summary. The reporter's output"
+            echo "format has changed, so this guard is no longer checking anything — fix it"
+            echo "rather than deleting it."
+            exit 1
+          fi
+
+          documented=$(grep -oE '[0-9]{3,5} tests' README.md | head -1 | grep -oE '^[0-9]+')
+
+          if [ "$ran" != "$documented" ]; then
+            echo "The suite ran ${ran} tests. The documents claim ${documented}."
+            echo
+            echo "Update every one of these to ${ran}, then push again:"
+            grep -nE '[0-9]{3,5} tests' README.md AGENTS.md docs/NEXT.md docs/AUDIT.md \
+              .github/pull_request_template.md .github/workflows/opencode-audit.yml || true
+            echo
+            echo "docs/NEXT.md also states the passing and skipped split; keep it consistent."
+            echo "Do NOT edit docs/JOURNAL.md or docs/COMPROMISES.md to match: their numbers are"
+            echo "dated observations, and rewriting them destroys the evidence they carry."
+            exit 1
+          fi
+          echo "documented suite size (${documented}) matches the suite as run"

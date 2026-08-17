@@ -3,8 +3,15 @@ name: audit
 # An agent working the issue queue, restricted to the areas it has earned.
 #
 # Same rules as everyone else — AGENTS.md is binding, work is claimed with a draft pull
-# request, CI decides what merges. It takes only issues labelled area:docs, area:tests or
-# chore, until there is evidence it should have more.
+# request, CI decides what merges. It changes documentation, tests and chores, until there is
+# evidence it should have more.
+#
+# Its pull requests go through `review` like everyone else's, with one difference worth
+# knowing: this lane is not Jules, so its pull requests carry no session id and a refusal
+# cannot be relayed back to an author. A refused pull request from this lane is labelled
+# `review:changes-requested`, waits, and is parked by `merge-sweeper` — which is the correct
+# outcome, but it means a finding here costs a whole cycle. Getting it right first time
+# matters more in this lane than in Jules'.
 #
 # Resilience is the other half of this file. The provider answers 429 with a *retryable*
 # error, the SDK retries it forever, and the job squats on a runner until its timeout —
@@ -51,13 +58,20 @@ jobs:
         run: |
           set -uo pipefail
 
+          # Prints the HTTP status, or 000 if curl itself failed. The `|| echo 000` this
+          # replaces did not substitute for the status, it appended to it: a curl that timed
+          # out printed `000` and then `000` again, and the caller compared "000000" with
+          # "200". That is what the log said on 2026-08-17 — `zen: HTTP 000000` — and with
+          # OPENROUTER_API_KEY unset there was no fallback to notice, so the lane spent the
+          # day exiting quietly and looking healthy.
           probe() {  # url, key, model → prints the HTTP status
-            curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            local code
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
               -X POST "$1" \
               -H "Authorization: Bearer $2" \
               -H 'Content-Type: application/json' \
-              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}" \
-              || echo 000
+              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}")
+            [ -n "$code" ] && printf '%s' "$code" || printf '000'
           }
 
           if [ -n "${ZEN_KEY:-}" ]; then
@@ -93,8 +107,11 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # AGENT_PAT if present, GITHUB_TOKEN otherwise. The distinction matters here and
           # nowhere else: a pull request opened with GITHUB_TOKEN does not trigger further
-          # workflows — GitHub prevents that so automation cannot loop — so `test` would
-          # never run on this lane's pull requests and `auto-merge` would never fire.
+          # workflows — GitHub prevents that so automation cannot loop — so neither `test`
+          # nor `review` would ever run on this lane's pull requests, and with no verdict
+          # `merge-sweeper` would eventually merge them unreviewed on the grace timer.
+          # `lane-doctor` checks daily that this token can actually push, because for five
+          # days in August 2026 it could not and nothing said so.
           GITHUB_TOKEN: ${{ secrets.AGENT_PAT || secrets.GITHUB_TOKEN }}
         with:
           model: ${{ steps.probe.outputs.model }}
@@ -108,21 +125,50 @@ jobs:
 
             YOUR SCOPE
 
-            You take issues labelled `area:docs`, `area:tests` or `chore` — and only those.
-            Other issues belong to sessions with more room; leave them claimed or unclaimed
-            as you found them.
+            You change documentation, tests and chores — and only those. Anything touching
+            `runtime/` behaviour or `operating-model/` belongs to a session with more room;
+            leave it claimed or unclaimed as you found it.
+
+            Judge scope by what an issue asks you to change, not by its labels. Almost no
+            issue in this repository is labelled, so a label is evidence when it is present
+            and means nothing when it is absent.
 
             If you find a defect outside your scope, do not fix it. Open an issue with the
             file, the line and the evidence, label it and let someone else take it.
 
             CHOOSING WORK
 
-              gh issue list --state open --label ready
+              gh issue list --state open --limit 100
               gh pr list --state open
 
-            An issue referenced by an open pull request is claimed — skip it. Take the
-            highest-priority unclaimed one in your scope, and open a draft pull request
-            with "Closes #N" in the body BEFORE you start. That is how you claim it.
+            Do not filter on the `ready` label. This lane used to select with
+            `--label ready`, and not one open issue in this repository carries a label, so
+            the query returned nothing every single time and every run fell through to
+            auditing instead. That is why the same finding was filed eight times.
+
+            An issue referenced by an open pull request is claimed — skip it. Otherwise take
+            the oldest unclaimed issue whose work is in your scope (docs, tests, chores),
+            judging scope by what the issue actually asks you to change rather than by its
+            labels. Open a draft pull request with "Closes #N" in the body BEFORE you start.
+            That is how you claim it. Label the issue as you take it, so the next session can
+            filter what you could not.
+
+            BEFORE YOU FILE ANYTHING NEW
+
+            Search first:
+
+              gh issue list --state all --search "<a distinctive phrase from your finding>"
+
+            If an open issue already describes what you found, do not open a second one. Add
+            a comment only if you have something genuinely new — a line number the original
+            missed, or a number that has since changed. Otherwise leave it alone and move on
+            to work that is not already recorded.
+
+            Re-reporting a known finding is not a result. Between 2026-08-13 and 2026-08-17
+            this lane opened #13, #15, #16, #18, #19, #21, #24, #25, #37, #39 and #41, all of
+            them the same test-count drift and the same stray duplicate test, each time
+            "verified" afresh. Ten runs of correct work that moved nothing, and a queue too
+            noisy to read.
 
             If nothing in your scope is available, verify instead: take a claim this
             repository makes — in the README, in docs/, in a register entry marked closed —
@@ -130,7 +176,14 @@ jobs:
             own contents on 2026-08-12: two entries sat open long after the work closing
             them had landed. Treat every claim as unverified until you have executed it.
             Then either open an issue with what you found, or add the test that would have
-            caught it.
+            caught it — preferring the test, which lands, over the issue, which waits.
+
+            IF YOU CANNOT PUSH
+
+            Check whether you can push a branch before you promise a pull request. If the
+            token cannot push, say so in one line and stop; do not open an issue about it.
+            `lane-doctor` checks that capability every day and reports it in one place, which
+            is where it belongs. An issue per run for a condition you cannot fix is noise.
 
             RULES THAT ARE NOT TRADE-OFFS
 
@@ -144,7 +197,7 @@ jobs:
 
             FINISHING
 
-            Run `npm test`; it must be green — 641 tests, about 30 seconds. Add an entry at
+            Run `npm test`; it must be green — 658 tests, about 30 seconds. Add an entry at
             the top of docs/JOURNAL.md under today's date. Open one pull request against
             main and fill in the template, including what you did not finish.
 

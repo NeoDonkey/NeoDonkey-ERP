@@ -1,18 +1,43 @@
 name: jules-scheduled-session
 
-# Triggers autonomous Google Jules sessions via the Jules REST API using AUTO_CREATE_PR mode.
-# Runs on schedule (e.g. 3 times daily) or manually via workflow_dispatch.
-# Requires JULES_API_KEY secret to be configured in repository settings.
+# Starts autonomous Google Jules sessions through the Jules REST API.
+#
+# Cadence. Six a day, every four hours, against a free-tier allowance of fifteen sessions a
+# day. The nine remaining are not spare: `review` spends them when it has to relay findings
+# into a session that has already finished and can only be reached by starting a new one. A
+# schedule that used the whole allowance would take the review loop's budget with it, and the
+# review loop is what keeps the work correct.
+#
+# Two things are checked before a session is started, because the expensive failure here is
+# not an unused session but three of them working on the same files at once:
+#
+#   - How many pull requests are already open. This repository merges one change at a time
+#     and AGENTS.md says so; parallel sessions produce conflicts, and a conflicted pull
+#     request is worse than no pull request. #28 sat conflicted from 2026-08-15 to 2026-08-17
+#     with nobody to rebase it.
+#   - How many Jules sessions are already running, against the three-concurrent limit. Asking
+#     for a fourth wastes the call and the quota.
 
 on:
   schedule:
-    - cron: '0 4,12,20 * * *'
+    - cron: '0 */4 * * *'
   workflow_dispatch:
     inputs:
       prompt:
-        description: 'Custom prompt for Jules session (optional)'
+        description: 'Custom prompt for the session (optional)'
         required: false
-        default: 'Autonomous background engineering task: Pick up the next unclaimed ready issue or item from docs/NEXT.md, implement the solution with unit tests, verify with npm test, update docs/NEXT.md and docs/JOURNAL.md, and publish the pull request ready for review.'
+      force:
+        description: 'Start a session even if the queue is busy'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: jules-scheduled-session
+  cancel-in-progress: false
 
 jobs:
   trigger-jules:
@@ -20,24 +45,111 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Trigger Jules Session via REST API
+      - name: Is there room for another session?
+        id: room
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          FORCE: ${{ github.event.inputs.force }}
+          # One in flight, plus one that may be mid-review. A third is already a conflict
+          # waiting to happen in a repository where nothing rebases.
+          MAX_OPEN_PRS: 2
+          MAX_ACTIVE_SESSIONS: 3
+        run: |
+          set -uo pipefail
+
+          if [ "${FORCE:-false}" = "true" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "forced — skipping the queue checks"
+            exit 0
+          fi
+
+          # Drafts do not count: this repository parks work by drafting it, and a parked
+          # pull request is waiting for a human, not occupying the lane.
+          open_prs=$(gh pr list --repo "$GH_REPO" --state open --limit 100 \
+            --json isDraft --jq '[.[] | select(.isDraft == false)] | length' 2>/dev/null || echo 0)
+          echo "open non-draft pull requests: ${open_prs}"
+          if [ "${open_prs:-0}" -ge "$MAX_OPEN_PRS" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::${open_prs} pull requests already open — not starting another session. Landing what is in flight comes first."
+            exit 0
+          fi
+
+          if [ -n "${JULES_API_KEY:-}" ]; then
+            code=$(curl -sS -o /tmp/sessions.json -w '%{http_code}' --max-time 30 \
+              -H "x-goog-api-key: ${JULES_API_KEY}" \
+              'https://jules.googleapis.com/v1alpha/sessions?pageSize=30' || printf '000')
+            if [ "$code" = "200" ]; then
+              active=$(jq '[.sessions[]? | select(.state == "QUEUED" or .state == "PLANNING" or .state == "IN_PROGRESS" or .state == "AWAITING_PLAN_APPROVAL")] | length' /tmp/sessions.json 2>/dev/null || echo 0)
+              echo "active Jules sessions: ${active}"
+              if [ "${active:-0}" -ge "$MAX_ACTIVE_SESSIONS" ]; then
+                echo "go=false" >> "$GITHUB_OUTPUT"
+                echo "::notice::${active} sessions already active — at the concurrency limit. Skipping."
+                exit 0
+              fi
+            else
+              echo "::notice::Could not list sessions (HTTP ${code}) — proceeding on the pull request count alone."
+            fi
+          fi
+
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - name: Start the session
+        if: steps.room.outputs.go == 'true'
         env:
           JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
           CUSTOM_PROMPT: ${{ github.event.inputs.prompt }}
           GITHUB_REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
 
           if [ -z "${JULES_API_KEY:-}" ]; then
-            echo "::notice ::JULES_API_KEY secret is not set. Skipping Jules API session creation."
-            echo "To enable automated API sessions, create an API key at https://jules.google.com/settings#api and set JULES_API_KEY in repository secrets."
+            echo "::notice ::JULES_API_KEY is not set. Skipping."
+            echo "Create a key at https://jules.google.com/settings#api and set JULES_API_KEY in repository secrets."
             exit 0
           fi
 
-          PROMPT="${CUSTOM_PROMPT:-Autonomous background engineering task: Pick up the next unclaimed ready issue or item from docs/NEXT.md, implement the solution with unit tests, verify with npm test, update docs/NEXT.md and docs/JOURNAL.md, and publish the pull request ready for review.}"
+          # The default prompt is deliberately explicit about the review loop. A session that
+          # does not know a reviewer will answer it treats its pull request as finished the
+          # moment it is opened, and then ignores the findings that come back — which is what
+          # every session did before 2026-08-17, when the findings were arriving on pull
+          # requests that had already merged.
+          read -r -d '' DEFAULT_PROMPT <<'PROMPT' || true
+          Autonomous background engineering task for the NeoDonkey repository.
+
+          Read AGENTS.md first. It is binding: the non-negotiables, how work is claimed, how it
+          is verified. Read docs/NEXT.md for where the project stands.
+
+          Pick up the next unclaimed ready issue, or the next item in docs/NEXT.md if the issue
+          queue has nothing for you. Check the open pull requests first — an issue referenced by
+          one is already claimed, and duplicating it wastes both sessions. Implement the change
+          with unit tests, verify with `npm test`, update docs/NEXT.md and docs/JOURNAL.md, and
+          publish the pull request ready for review, not as a draft.
+
+          A new test must fail before your change and pass after it. If it passes both ways it
+          proves nothing. Never weaken, skip or delete an existing test to get the suite green.
+
+          Then stay available. An automated reviewer examines your pull request against
+          AGENTS.md a few minutes after you open it, and its findings are sent back to you as a
+          message in this session. When that happens:
+
+            - Fix the findings on the same branch you already pushed and push there again. Do
+              not open a second pull request; the existing one updates itself.
+            - Keep `npm test` green.
+            - If a finding is wrong, change nothing and say why in a comment on the pull
+              request, citing the file and line. The reviewer being wrong is an expected
+              outcome, not something to work around.
+
+          Nothing merges until a review comes back clean, and after three rounds the pull
+          request is parked for a human. So prefer a small change you can defend to a broad one
+          you cannot.
+          PROMPT
+
+          PROMPT="${CUSTOM_PROMPT:-$DEFAULT_PROMPT}"
           SOURCE_NAME="sources/github/${GITHUB_REPO}"
 
-          echo "Initiating Jules session for ${SOURCE_NAME} with AUTO_CREATE_PR mode..."
+          echo "Starting a Jules session for ${SOURCE_NAME}..."
 
           PAYLOAD=$(jq -n \
             --arg prompt "$PROMPT" \
@@ -52,10 +164,20 @@ jobs:
               title: "Autonomous Scheduled Task"
             }')
 
-          RESPONSE=$(curl -s -X POST "https://jules.googleapis.com/v1alpha/sessions" \
+          code=$(curl -sS -o /tmp/session.json -w '%{http_code}' --max-time 60 \
+            -X POST "https://jules.googleapis.com/v1alpha/sessions" \
             -H "Content-Type: application/json" \
             -H "x-goog-api-key: ${JULES_API_KEY}" \
-            -d "${PAYLOAD}")
+            -d "${PAYLOAD}" || printf '000')
 
-          echo "Response from Jules API:"
-          echo "${RESPONSE}"
+          echo "HTTP ${code}"
+          cat /tmp/session.json || true
+
+          if [ "$code" != "200" ]; then
+            # Loud, because a silent failure here is a day with no work done and a green
+            # workflow badge saying otherwise.
+            echo "::error::The Jules API refused to start a session (HTTP ${code}). Nothing will be done this cycle."
+            exit 1
+          fi
+
+          echo "session=$(jq -r '.id // .name // "?"' /tmp/session.json)"

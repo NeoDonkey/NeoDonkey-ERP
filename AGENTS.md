@@ -165,7 +165,7 @@ suggests, and the parser, ledger, live layer and sync path are built and tested.
 ## 6. Verifying
 
 ```bash
-npm test          # 641 tests, about 30 seconds. Must be green before opening a PR.
+npm test          # 658 tests, about 30 seconds. Must be green before opening a PR.
 npm run demo      # the acceptance demo, end to end
 npm run ui        # then open http://localhost:8080
 ```
@@ -176,14 +176,57 @@ nothing in it is asserted from a report — status is re-checked against the cod
 
 ---
 
-## 7. Autonomous Scheduled Sessions & Execution
+## 7. Autonomous sessions, and the review loop
 
-This repository is designed for **100% autonomous background execution** via Google Jules scheduled sessions.
+This repository runs unattended for days at a time. Nobody will answer a question, approve a
+plan, or publish your pull request for you.
 
-- **Zero Human-in-the-Loop:** During scheduled sessions, there is no human available to respond to messages, approve plans, or publish PRs. Do NOT wait for human confirmation, ask clarifying questions, or request plan approval.
-- **Autonomous Execution:** Independently select the next item (from `docs/NEXT.md` or issue queue), implement the change, verify with `npm test`, and finalize the work.
-- **Auto-Publish Pull Requests:** Always publish/submit the pull request at the end of the session as **ready for review** (non-draft). Do not leave PRs in draft or pending state.
-- **Auto-Merge:** Once published, `.github/workflows/auto-merge.yml` automatically queues and merges the PR once CI checks pass.
+- **No human in the loop.** Do not wait for confirmation, ask clarifying questions, or request
+  plan approval. If a decision is genuinely not yours to make, §6 says what to do: open an issue
+  labelled `needs-decision` and pick something else.
+- **Publish, do not park.** Open the pull request **ready for review**, not as a draft. A draft
+  is invisible to everything downstream — nothing reviews it and nothing merges it.
+- **Then answer the review.** Your pull request is not finished when you open it. It is finished
+  when a review comes back clean.
+
+### The loop, exactly
+
+1. You open a pull request. `test` and `review` both start.
+2. `review` reads the diff against this file and posts findings ending in one line:
+   `VERDICT: CLEAN` or `VERDICT: CHANGES_REQUIRED`.
+3. **CLEAN** → auto-merge is enabled and GitHub merges it once `test` is green.
+4. **CHANGES_REQUIRED** → the pull request is labelled `review:changes-requested` and **nothing
+   merges while that label is present**. The findings are sent to you — as a message in your own
+   Jules session, addressed by the session id in your pull request body.
+5. You fix them **on the same branch** and push. Do not open a second pull request; the existing
+   one updates itself, and a second one splits the review. Your push starts the loop again.
+6. After **three** rounds without a clean verdict the pull request is drafted, labelled
+   `review:parked`, and an issue is opened. It then waits for a human, which may be a week.
+
+**A finding you believe is wrong is not an instruction.** Change nothing, and say why in a comment
+on the pull request, citing the file and line. The reviewer is a model reading a diff and it has
+been wrong before; a wrong fix applied to satisfy it is worse than an argument. But say so — a
+silent refusal looks identical to a session that died, and gets parked as one.
+
+### What happens when the machinery fails
+
+Worth knowing, because it decides whether being slow is safe:
+
+- **No review at all** — provider down, rate-limited, runner lost. After 45 minutes
+  `merge-sweeper` releases the pull request on `test` alone and says so in a comment. The
+  reviewer holding the queue can never deadlock it; absence of a review is not a veto.
+- **Refused and never answered** — after 12 hours with no push, `merge-sweeper` parks it.
+- **Conflicted with main** — after 24 hours it is drafted and labelled `stale:conflicting`.
+  Nothing in this repository rebases, so a conflict is fatal until someone rebases it by hand.
+  This is why you check what is already in flight before starting.
+- **Untouched for 7 days** — closed. The branch is left in place.
+
+The relevant files are `.github/workflows/opencode-review.yml` (review, relay, park) and
+`.github/workflows/merge-sweeper.yml` (every deadline above). `lane-doctor.yml` checks daily that
+the tokens and providers all three lanes depend on still work, and opens one issue when they do
+not — because a credential that silently stops working is this repository's most expensive
+failure. In August 2026 a token that could not push branches went unnoticed for five days while
+the audit lane filed the same finding eleven times.
 
 ---
 
@@ -204,8 +247,10 @@ git config --local user.email "226692358+danielfrommunich@users.noreply.github.c
   boilerplate sign-offs.
 - Open one pull request against `main` and fill in the template honestly — including what you did
   *not* finish.
-- Ensure the pull request is marked **ready for review** (not draft) when work is verified, so auto-merge can process it without human intervention.
-- CI must be green. The merge is automatic once it is; nothing merges on a red build.
+- Ensure the pull request is marked **ready for review** (not draft) when work is verified. A
+  draft is reviewed by nothing and merged by nothing.
+- CI must be green, and the review must come back clean. Nothing merges on a red build, and
+  nothing merges while `review:changes-requested` is set — see §7 for the loop and its deadlines.
 
 ---
 
