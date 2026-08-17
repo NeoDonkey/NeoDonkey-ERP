@@ -141,17 +141,23 @@ jobs:
               gh issue list --state open --limit 100
               gh pr list --state open
 
-            Do not filter on the `ready` label. This lane used to select with
-            `--label ready`, and not one open issue in this repository carries a label, so
-            the query returned nothing every single time and every run fell through to
-            auditing instead. That is why the same finding was filed eight times.
+            Prefer `ready`, but do not require it. This lane used to select with
+            `--label ready` as a hard filter, and through mid-August not one open issue carried
+            any label, so the query returned nothing every single time and every run fell
+            through to auditing instead — which is why the same finding was filed eleven times.
+            The backlog is labelled now, so `ready` is usually meaningful; treat its absence as
+            "nobody has triaged this yet", not as "do not touch".
 
             An issue referenced by an open pull request is claimed — skip it. Otherwise take
-            the oldest unclaimed issue whose work is in your scope (docs, tests, chores),
-            judging scope by what the issue actually asks you to change rather than by its
-            labels. Open a draft pull request with "Closes #N" in the body BEFORE you start.
-            That is how you claim it. Label the issue as you take it, so the next session can
-            filter what you could not.
+            the highest-priority unclaimed issue whose work is in your scope (docs, tests,
+            chores), judging scope by what the issue actually asks you to change. Open a draft
+            pull request with "Closes #N" in the body BEFORE you start. That is how you claim
+            it. Label the issue as you take it, so the next session can filter what you could
+            not.
+
+            If nothing in your scope is unclaimed, say so and stop, or verify a claim as below.
+            Specifying is not your job — it belongs to the sessions with more room, and
+            docs/NEXT.md now routes them to it.
 
             BEFORE YOU FILE ANYTHING NEW
 

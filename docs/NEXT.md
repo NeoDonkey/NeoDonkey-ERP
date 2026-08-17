@@ -60,9 +60,31 @@ is parsed and never populated. The grammar landed; the adoption did not. Filed a
 
 ---
 
-## After that, in order
+## After that: the queue is empty, and that is the thing to fix
 
-No implementation items remain in the "our shortfall" release blocker set. Further work falls under non-implementation decisions (e.g. #15 rr7) or Wave 2+ / Wave 5 roadmap items.
+The release-blocker set is closed. That does **not** mean the project is finished — it means
+nobody has turned the next part of the roadmap into issues yet, and until someone does, every
+session falls back to auditing documentation and re-checking claims. Six of the eight pull
+requests merged before 2026-08-17 were tests about documents. That is what an empty queue looks
+like from the outside, and it is not progress.
+
+**So specifying is now the highest-value work available**, and `AGENTS.md` §6 routes you to it
+automatically whenever fewer than three unclaimed `ready` issues remain. Read
+`docs/SPECIFYING.md`, then decompose from `docs/ROADMAP-V1.md`:
+
+- **Part 2** — the ten v1.0 gate conditions. Each is several issues.
+- **Part 3, Wave 2 — the claims.** The general ledger, AR/AP, VAT and OSS returns, period close,
+  multi-currency. This is the substance of the product and none of it is queued.
+- **Part 3, Wave 3 — sellable.** DATEV, XRechnung/EN-16931, one inbound dialect, PDF from
+  versioned templates.
+
+Decompose; do not invent. Every issue cites the sentence it came from and says how it will be
+verified. Where something genuinely needs a human's decision rather than an implementation — a
+VAT rate, a chart-of-accounts choice, a period-close policy — open it `needs-decision` and move
+on. Do not guess, and do not implement around it.
+
+This supersedes the earlier note here that no work remained. It was true about the blocker set and
+misleading about everything else.
 
 ---
 
@@ -79,14 +101,26 @@ Note also that `.gitignore` currently excludes `release.json`, because that name
 workspace artefact. Whoever eventually does arm the release will have to separate those two
 meanings first.
 
-**Wave 5 accounting work** — opening balances, credit notes, a refund month, fixed assets,
-accruals, year-end close. `docs/READINESS.md` lists these and they are real, but each needs a
-domain decision rather than an implementation. A first entry genuinely cannot be posted today, and
-that is the wall between this and a real company's first week. It is not a good solo task.
+**Wave 5 accounting work, as implementation** — opening balances, credit notes, a refund month,
+fixed assets, accruals, year-end close. `docs/READINESS.md` lists these and they are real. A first
+entry genuinely cannot be posted today, and that is the wall between this and a real company's
+first week.
+
+Do not *implement* these blind: each carries a domain decision — which opening-balance convention,
+which depreciation method, what the year-end close actually asserts — and guessing produces an ERP
+that is confidently wrong about money, which is the worst thing this product could be.
+
+But **specifying them is allowed and wanted.** Read the sources, write the issue, and where the
+decision is genuinely a human's, open it `needs-decision` with the question stated precisely and
+the options named. That converts a vague wall into a short list somebody can answer in an
+afternoon, which is the only way this ever gets unblocked while nobody is watching. Changed
+2026-08-17: the old wording said "leave it", and the effect was that nobody wrote the questions
+down either.
 
 ---
 
 ## Open questions for a human
 
-Nothing outstanding. When an item turns out to need a decision rather than an implementation,
-write the question here instead of choosing an answer.
+Nothing outstanding right now. When an item turns out to need a decision rather than an
+implementation, open a `needs-decision` issue with the question and the options — do not choose an
+answer, and do not silently skip it. List it here too if it blocks a whole area.
