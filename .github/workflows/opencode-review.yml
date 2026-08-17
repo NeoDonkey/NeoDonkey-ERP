@@ -33,11 +33,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
-permissions:
-  id-token: write
-  contents: read
-  pull-requests: write
-  issues: write
+# Job-level, not workflow-level. The `review` job runs a model with tool access over the
+# contents of a pull request, and must never hold a token that can write to the repository;
+# the `queue` job needs exactly that and must never run the pull request's code. Splitting
+# them is the whole reason `queue` exists as a separate job — see the note on it below.
+permissions: {}
 
 concurrency:
   # One review per pull request. A new push cancels the review of the commit it replaced.
@@ -52,14 +52,29 @@ env:
 jobs:
   review:
     runs-on: ubuntu-latest
+    # Everything this job does is comment, label and relay. It deliberately cannot write to
+    # the repository: it checks out a pull request's code and hands it to a model with tools.
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      issues: write
+    outputs:
+      verdict: ${{ steps.verdict.outputs.verdict }}
     # Tight on purpose. A review is minutes; anything longer is the provider answering
     # 429 with a retryable error and the SDK retrying it until the job is killed.
     timeout-minutes: 12
-    # Never review a fork (untrusted), a draft, or this reviewer's own output.
+    # Never review a fork (untrusted), a draft, this reviewer's own output, or a pull request
+    # already parked. The parked check is not redundant with the draft check: parking tries to
+    # draft and can fail — GITHUB_TOKEN is refused `convertPullRequestToDraft` — so the label is
+    # the only reliable signal that a human has been asked to look. Without this line a parked
+    # pull request would be reviewed again on its next push, spending quota to re-derive findings
+    # that are already sitting unanswered in its comments.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false &&
-      !startsWith(github.event.pull_request.head.ref, 'opencode/')
+      !startsWith(github.event.pull_request.head.ref, 'opencode/') &&
+      !contains(github.event.pull_request.labels.*.name, 'review:parked')
 
     steps:
       - uses: actions/checkout@v6
@@ -306,21 +321,16 @@ jobs:
         run: |
           gh pr edit "$PR" --repo "$GH_REPO" --add-label 'review:changes-requested' || true
 
-      - name: Merge on a clean verdict
+      - name: Clear the refusal after a clean verdict
         if: always() && steps.verdict.outputs.verdict == 'CLEAN'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
         run: |
-          set -uo pipefail
-          # A later round came back clean, so the earlier refusal no longer stands.
+          # A later round came back clean, so the earlier refusal no longer stands. Queuing
+          # the merge itself happens in the `queue` job, which holds the write token.
           gh pr edit "$PR" --repo "$GH_REPO" --remove-label 'review:changes-requested' || true
-          # `--auto` hands the pull request to GitHub, which merges it only once every
-          # required check is green. Branch protection, not this line, decides.
-          gh pr merge "$PR_URL" --auto --squash --delete-branch
-          echo "clean review — queued for merge behind \`test\`"
 
       - name: Relay the findings to the agent that wrote the code
         if: always() && steps.verdict.outputs.verdict == 'CHANGES_REQUIRED'
@@ -333,6 +343,8 @@ jobs:
           # Untrusted: written by whoever opened the pull request. Only ever read as data.
           PR_BODY: ${{ github.event.pull_request.body }}
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          # Only for converting to draft when parking; GITHUB_TOKEN cannot do that one thing.
+          AGENT_PAT: ${{ secrets.AGENT_PAT }}
         run: |
           set -uo pipefail
           review=$(cat "${RUNNER_TEMP}/review.md")
@@ -352,20 +364,33 @@ jobs:
           # ---- out of rounds: park it and stop. Better a pull request waiting for a
           # ---- human than two agents trading opinions for a week.
           if [ "$round" -gt "$MAX_ROUNDS" ]; then
+            # The LABEL is what stops the machinery, not the draft. This job skips a pull
+            # request labelled `review:parked`, and merge-sweeper never releases one. Drafting
+            # is a second signal and a courtesy to whoever opens the pull request next — and it
+            # is the one action GITHUB_TOKEN cannot perform, because App tokens are refused the
+            # `convertPullRequestToDraft` mutation. The sweeper claimed it had drafted #29 on
+            # its first live run and had not, which is why the label leads here and the message
+            # below only says what actually happened.
             gh pr edit "$PR" --repo "$GH_REPO" --add-label 'review:parked' || true
-            # Draft is what actually stops the machinery: auto-merge, this workflow and
-            # merge-sweeper all skip drafts. The label is for the human.
-            gh pr ready "$PR" --repo "$GH_REPO" --undo || true
+            if [ -n "${AGENT_PAT:-}" ] \
+               && GH_TOKEN="$AGENT_PAT" gh pr ready "$PR" --repo "$GH_REPO" --undo >/dev/null 2>&1; then
+              drafted="It is now a draft as well, so nothing can queue it."
+            elif gh pr ready "$PR" --repo "$GH_REPO" --undo >/dev/null 2>&1; then
+              drafted="It is now a draft as well, so nothing can queue it."
+            else
+              drafted="It could not be converted to a draft — the label is doing the work; see the run log."
+            fi
             {
               printf 'Parked after %s relay rounds without a clean review.\n\n' "$MAX_ROUNDS"
-              printf 'Converted to draft so nothing merges it. The findings below are the ones still standing after the last round. A human decides whether the reviewer is right.\n\n'
+              printf 'Labelled `review:parked`, which stops the review loop and stops merge-sweeper releasing it. %s\n\n' "$drafted"
+              printf 'The findings below are the ones still standing after the last round. A human decides whether the reviewer is right — and it may well not be.\n\n'
               printf -- '---\n\n%s\n' "$review"
             } > "${RUNNER_TEMP}/parked.md"
             gh pr comment "$PR" --repo "$GH_REPO" --body-file "${RUNNER_TEMP}/parked.md" || true
             gh issue create --repo "$GH_REPO" \
               --title "Review and Jules did not converge on #${PR} after ${MAX_ROUNDS} rounds" \
               --label 'blocked' \
-              --body "$(printf 'Pull request #%s is parked as a draft: %s\n\nThe reviewer and the authoring session exchanged %s rounds without reaching a clean verdict. Either the findings are real and the fix is harder than the lane can manage, or the reviewer is wrong and is refusing work it should pass.\n\nUnresolved findings from the final round:\n\n%s\n' "$PR" "$PR_URL" "$MAX_ROUNDS" "$review")" || true
+              --body "$(printf 'Pull request #%s is parked and labelled `review:parked`: %s\n\nThe reviewer and the authoring session exchanged %s rounds without reaching a clean verdict. Either the findings are real and the fix is harder than the lane can manage, or the reviewer is wrong and is refusing work it should pass. Read the exchange before assuming the first.\n\nUnresolved findings from the final round:\n\n%s\n' "$PR" "$PR_URL" "$MAX_ROUNDS" "$review")" || true
             echo "::warning::Parked #${PR} after ${MAX_ROUNDS} rounds."
             exit 0
           fi
@@ -454,3 +479,49 @@ jobs:
               "The review above asks for changes, but the findings could not be delivered to Jules session \`${session}\` (\`sendMessage\` returned HTTP ${code}, and starting a session on the branch also failed). This pull request is not merging and no agent has been told why — it needs a human. See the run log for the API response." || true
             echo "::error::Could not deliver the review to session ${session}."
           fi
+
+  # Queueing the merge is a separate job for one reason, and it is the reason the deleted
+  # auto-merge.yml gave for the same split: "No checkout: this job never needs the pull
+  # request's code, and running untrusted code in a job holding a write token is how
+  # repositories get taken over."
+  #
+  # That separation was lost when auto-merge.yml was folded into this file on 2026-08-17, and
+  # the merge step inherited `contents: read` along with it. Enabling auto-merge needs
+  # `contents: write`, so from that moment nothing could merge at all:
+  #
+  #   review  CLEAN → enablePullRequestAutoMerge → Resource not accessible by integration
+  #   sweeper       → mergePullRequest           → Resource not accessible by integration
+  #
+  # #49 was reviewed, came back VERDICT: CLEAN, and sat there. A gate that cannot pass
+  # anything is not a strict gate, it is a broken one — and it is exactly what the original
+  # design warned about when it refused to let the reviewer hold the queue.
+  queue:
+    needs: review
+    if: needs.review.outputs.verdict == 'CLEAN'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Deliberately no checkout. Nothing here reads the branch.
+      - name: Queue the merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          # `--auto` hands the pull request to GitHub, which merges it only once every
+          # required check is green. Branch protection, not this line, decides — a clean
+          # review does not override a red `test`.
+          if gh pr merge "$PR" --repo "$GH_REPO" --auto --squash --delete-branch; then
+            echo "clean review — queued for merge behind the required checks"
+            exit 0
+          fi
+          # Never silent. A queue step that fails and says nothing is how #48 and #49 sat
+          # open with a clean review and no explanation.
+          echo "::error::The review was clean but the merge could not be queued. This pull request will not merge on its own."
+          gh pr comment "$PR" --repo "$GH_REPO" --body \
+            "The review came back \`VERDICT: CLEAN\`, but queueing the merge failed — see [the run log](${GITHUB_SERVER_URL}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID}). This pull request will not merge on its own and needs a human. If the log says \`Resource not accessible by integration\`, the token is missing \`contents: write\`; if it says auto-merge is not enabled, turn it on in the repository settings." || true
+          exit 1
