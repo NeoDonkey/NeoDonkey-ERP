@@ -149,15 +149,33 @@ what you may not decide. In short:
    that demonstrates it. Not an adjective.
 5. Give it an `area:` label matching the directories it will touch, and a priority.
 
-### What you may not decide
+### What you decide, and what you may not
 
-If something is answered by **neither the manifesto nor the roadmap** — where the release
-fingerprint is published, whether a market is in scope for v1, which of two designs the project
-adopts — open an issue labelled `needs-decision` stating the question, the options and a
-recommendation, and stop. Do not answer it, and do not implement it.
+**A fact is yours. Look it up.** A VAT rate, a chart-of-accounts convention, a depreciation
+method, what a year-end close must assert, which fields EN-16931 makes mandatory — these have
+authoritative sources and are not anybody's preference. Research them on the web, cite a primary
+source per `docs/SPECIFYING.md` §2, and decide.
 
-This is rare on purpose. *How* Polish VAT reporting works is researchable and yours to establish.
-*Whether* Poland is in v1 is not.
+Record the decision as a **new file** in `docs/decisions/`, named `YYYY-MM-DD-short-slug.md`: the question,
+the answer, the source with its article or field, and what would have to change for the answer to
+change. One file per decision, so parallel sessions never collide — the same reason journal
+entries moved (§9). Where sources genuinely disagree, say so, implement the reading you can
+defend, and name the other.
+
+Nobody reads this repository for days at a time. An issue asking a human to choose is not the
+cautious option; it is the stalled one, and it waits on somebody who knows less about Polish VAT
+than an afternoon of reading does. **A documented decision that can be overturned beats a question
+nobody answers.**
+
+**Scope is not yours.** *How* Polish VAT reporting works is researchable and yours to establish.
+*Whether* Poland is in v1 is decided in the manifesto and the roadmap. If a question is answered
+by neither — whether a market is in scope, which of two incompatible designs the project adopts —
+open an issue labelled `needs-decision` with the question, the options and a recommendation, and
+stop. That should be rare.
+
+**And never the release signing key** (`COMPROMISES.md` #15 rr7). That one is refused for a
+security reason rather than a preference: generating a production key inside a public repository
+would be worse than shipping none, which is exactly why none was shipped.
 
 **One item per change.** A pull request closing one issue cleanly is worth more than one touching
 five things. Do not refactor broadly, do not restructure directories, and do not rewrite
@@ -169,7 +187,7 @@ suggests, and the parser, ledger, live layer and sync path are built and tested.
 ## 6. Verifying
 
 ```bash
-npm test          # 664 tests, about 30 seconds. Must be green before opening a PR.
+npm test          # 666 tests, about 30 seconds. Must be green before opening a PR.
 npm run demo      # the acceptance demo, end to end
 npm run ui        # then open http://localhost:8080
 ```

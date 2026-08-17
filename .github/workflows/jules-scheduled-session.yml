@@ -176,14 +176,87 @@ jobs:
           Read AGENTS.md first. It is binding: the non-negotiables, how work is claimed, how it
           is verified. Read docs/NEXT.md for where the project stands.
 
-          Pick up the next unclaimed ready issue, or the next item in docs/NEXT.md if the issue
-          queue has nothing for you. Check the open pull requests first — an issue referenced by
-          one is already claimed, and duplicating it wastes both sessions. Implement the change
-          with unit tests, verify with `npm test`, and publish the pull request ready for review,
-          not as a draft.
+          FIRST, DECIDE WHICH JOB THIS SESSION DOES
+
+          Do not skip this. Count what is actually there:
+
+            gh issue list --state open --label ready --json number | jq length
+            gh pr list --state open
+
+          An issue referenced by an open pull request is claimed; do not count it and do not take
+          it. Then follow the table in AGENTS.md §6:
+
+            fewer than 3 unclaimed `ready`  → SPECIFY
+            3 to 20 unclaimed               → IMPLEMENT
+            more than 20                    → IMPLEMENT, and do not specify at all
+
+          Say in your pull request which job you took and why.
+
+          IF YOU IMPLEMENT
+
+          Take the highest-priority unclaimed `ready` issue — p1 before p2 before p3 — preferring
+          one whose `area:` label differs from the areas the open pull requests touch. Open a draft
+          pull request with "Closes #N" in the body BEFORE you start; that is how you claim it.
+          Implement with unit tests, verify with `npm test`, then mark it ready for review.
 
           A new test must fail before your change and pass after it. If it passes both ways it
           proves nothing. Never weaken, skip or delete an existing test to get the suite green.
+
+          IF YOU SPECIFY
+
+          Read docs/SPECIFYING.md first — it is short and it is binding for this job.
+
+          The queue running dry does NOT mean the project is finished. It means nobody has turned
+          the next part of the roadmap into issues yet. docs/ROADMAP-V1.md Part 3 lists Wave 2 (the
+          general ledger, AR/AP, VAT and OSS returns, period close, multi-currency) and Wave 3
+          (DATEV, XRechnung, one inbound dialect, PDF from versioned templates). Part 2 is the ten
+          v1.0 gate conditions. Each of those lines is several implementable issues, and writing
+          them is real work — arguably the most valuable work available, because an empty queue
+          stops every other session too.
+
+          Decompose; do not invent. Every issue cites its source and quotes the sentence it came
+          from, states how it will be verified — the test that fails without it, or the command
+          that demonstrates it — and carries an `area:` label and a priority. Label it `ready`
+          only when it is genuinely implementable as written.
+
+          RESEARCH IT. DO NOT ASK.
+
+          A VAT rate, a chart-of-accounts convention, a depreciation method, what a year-end
+          close must assert, which fields EN-16931 makes mandatory — these are not opinions and
+          they are not the repository owner's to supply. They are facts with authoritative
+          sources, and you can look them up. Use the web. You will find better answers than a
+          question in an issue would produce, and you will find them today rather than in a
+          fortnight.
+
+          Nobody is reading this repository for days at a time. An issue asking a human to
+          choose is not a cautious act, it is a stalled one — it blocks the work, and the person
+          it waits for knows less about Polish VAT than a search does.
+
+          So: research, cite, decide, and write the decision down.
+
+            - Cite a PRIMARY source, per docs/SPECIFYING.md §2: the regulation itself, the
+              official specification, the tax authority's own documentation — with the article,
+              section or field that applies. "EN-16931 requires it" is not a citation.
+              "EN-16931-1:2017 §6.1, BT-31, mandatory when the seller is VAT-registered" is.
+            - Record it as a NEW file, `docs/decisions/YYYY-MM-DD-short-slug.md`: the question,
+              the answer, the source, and what would have to change for the answer to change.
+              One file per decision, so parallel sessions never collide.
+            - Where sources genuinely disagree, say so in the record, implement the reading you
+              can defend, and name the other. A documented decision someone can overturn beats
+              a question nobody answers.
+
+          WHAT IS STILL NOT YOURS
+
+          Scope, and only scope. *How* Polish VAT reporting works is researchable and yours to
+          establish. *Whether* Poland is in v1 is decided in the manifesto and the roadmap — if
+          the answer is in neither, that is a `needs-decision` issue and you stop.
+
+          And never the release signing key (#15 rr7). That is refused for a security reason,
+          not a preference: generating one inside a public repository would be worse than
+          shipping none.
+
+          Three or four well-sourced issues is a good session. Twenty vague ones is worse than
+          none, because the next session cannot tell which are real.
 
           UP TO THREE SESSIONS RUN AT ONCE, INCLUDING YOURS
 
