@@ -62,22 +62,33 @@ jobs:
           now=$(date -u +%s)
           acted=0
 
-          # One query for everything the rules below need. `commits` is the last-push time:
-          # `updatedAt` also moves when a bot comments, which would keep resetting the
-          # deadlines this file exists to enforce.
-          gh pr list --repo "$GH_REPO" --state open --limit 100 \
-            --json number,isDraft,mergeable,mergeStateStatus,autoMergeRequest,labels,commits,createdAt,headRefName,headRepositoryOwner \
-            --jq '.[] | {
-                    n: .number,
-                    draft: .isDraft,
-                    mergeable: .mergeable,
-                    automerge: (.autoMergeRequest != null),
-                    labels: [.labels[].name],
-                    last: (.commits | last | .committedDate),
-                    created: .createdAt,
-                    ref: .headRefName,
-                    owner: .headRepositoryOwner.login
-                  } | @base64' > /tmp/prs.txt
+          # The cheap fields for every open pull request.
+          #
+          # Deliberately WITHOUT `commits`. Asking for it here is the obvious way to get the
+          # last-push time in one query, and it does not work: `gh pr list --limit 100 --json
+          # commits` expands to commits × authors per pull request and GitHub rejects the whole
+          # query — "requesting up to 1,000,000 possible nodes which exceeds the maximum limit
+          # of 500,000". The failure mode is what makes it worth this comment: the redirect
+          # still creates the file, the file is empty, the loop below runs zero times, and this
+          # job reports "swept: 0" and exits green. A sweeper that silently stops sweeping is
+          # precisely the class of failure this whole file exists to catch, so it must fail
+          # loudly instead — hence the check.
+          if ! gh pr list --repo "$GH_REPO" --state open --limit 100 \
+                --json number,isDraft,mergeable,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
+                --jq '.[] | {
+                        n: .number,
+                        draft: .isDraft,
+                        mergeable: .mergeable,
+                        automerge: (.autoMergeRequest != null),
+                        labels: [.labels[].name],
+                        ref: .headRefName,
+                        sha: .headRefOid,
+                        owner: .headRepositoryOwner.login
+                      } | @base64' > /tmp/prs.txt; then
+            echo "::error::Could not list open pull requests. Nothing was swept, and every"
+            echo "::error::deadline in this file is therefore not being enforced. Fix this first."
+            exit 1
+          fi
 
           while read -r row; do
             [ -z "$row" ] && continue
@@ -88,8 +99,8 @@ jobs:
             mergeable=$(printf '%s' "$j" | jq -r '.mergeable')
             automerge=$(printf '%s'  "$j" | jq -r '.automerge')
             labels=$(printf '%s' "$j" | jq -r '.labels | join(" ")')
-            last=$(printf '%s'   "$j" | jq -r '.last')
             ref=$(printf '%s'    "$j" | jq -r '.ref')
+            sha=$(printf '%s'    "$j" | jq -r '.sha')
             owner=$(printf '%s'  "$j" | jq -r '.owner')
 
             # A fork's pull request is untrusted and could not merge anyway; leave it for a human.
@@ -105,6 +116,15 @@ jobs:
             case " $labels " in
               *' review:parked '*) echo "#${n}: parked — leaving it"; continue ;;
             esac
+
+            # The head commit's date, one REST call per pull request. Not `updatedAt`, which
+            # also moves when a bot comments — and this file comments — so using it would let a
+            # pull request reset its own deadlines simply by being nagged about them.
+            last=$(gh api "repos/${GH_REPO}/commits/${sha}" --jq '.commit.committer.date' 2>/dev/null || true)
+            if [ -z "$last" ]; then
+              echo "#${n}: could not read the head commit date — skipping rather than guessing"
+              continue
+            fi
 
             pushed=$(date -u -d "$last" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$last" +%s)
             mins=$(( (now - pushed) / 60 ))
