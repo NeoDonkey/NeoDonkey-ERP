@@ -1,0 +1,196 @@
+name: merge-sweeper
+
+# The part of the loop that runs when nothing else does.
+#
+# `review` decides the normal cases: a clean verdict queues the merge, findings go back to
+# the agent that wrote the code. This file handles every way that can fail to happen at all,
+# because the repository is unattended for days at a time and a pull request nobody can act
+# on is indistinguishable from a project that has stopped.
+#
+# Four things rot here, and each has a deadline:
+#
+#   1. No verdict.  The provider was down, the runner was lost, the reviewer crashed. Nothing
+#      enabled auto-merge and nothing blocked it. After GRACE_MINUTES the pull request is
+#      released on `test` alone. This is the release valve that lets `review` hold the queue
+#      without being able to deadlock it — absence of a review is not a veto.
+#   2. A relay nobody answered.  The findings reached Jules and no push ever came. After
+#      GHOSTED_HOURS the pull request is parked rather than left waiting forever.
+#   3. A conflict.  #28 sat CONFLICTING from 2026-08-15 with no checks and no owner. A
+#      conflicted pull request cannot merge no matter how green the review is, and no agent
+#      here rebases. After CONFLICT_HOURS it is drafted and labelled so the queue is honest.
+#   4. Abandonment.  No commit for ABANDON_DAYS. Closed, with the branch left alone so the
+#      work is recoverable.
+#
+# Deadlines are generous on purpose. Every action here is reversible — draft, label, close —
+# and none of them touch main.
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: merge-sweeper
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Sweep open pull requests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          # How long a pull request waits for a review verdict before it merges without one.
+          # Long enough that a review in progress is never overtaken — the reviewer's own
+          # timeout is 12 minutes — and short enough that a dead provider costs an hour, not
+          # a weekend.
+          GRACE_MINUTES: 45
+          # A relayed pull request waits this long for Jules to push a fix.
+          GHOSTED_HOURS: 12
+          CONFLICT_HOURS: 24
+          ABANDON_DAYS: 7
+        run: |
+          set -uo pipefail
+          now=$(date -u +%s)
+          acted=0
+
+          # The cheap fields for every open pull request.
+          #
+          # Deliberately WITHOUT `commits`. Asking for it here is the obvious way to get the
+          # last-push time in one query, and it does not work: `gh pr list --limit 100 --json
+          # commits` expands to commits × authors per pull request and GitHub rejects the whole
+          # query — "requesting up to 1,000,000 possible nodes which exceeds the maximum limit
+          # of 500,000". The failure mode is what makes it worth this comment: the redirect
+          # still creates the file, the file is empty, the loop below runs zero times, and this
+          # job reports "swept: 0" and exits green. A sweeper that silently stops sweeping is
+          # precisely the class of failure this whole file exists to catch, so it must fail
+          # loudly instead — hence the check.
+          if ! gh pr list --repo "$GH_REPO" --state open --limit 100 \
+                --json number,isDraft,mergeable,autoMergeRequest,labels,headRefName,headRefOid,headRepositoryOwner \
+                --jq '.[] | {
+                        n: .number,
+                        draft: .isDraft,
+                        mergeable: .mergeable,
+                        automerge: (.autoMergeRequest != null),
+                        labels: [.labels[].name],
+                        ref: .headRefName,
+                        sha: .headRefOid,
+                        owner: .headRepositoryOwner.login
+                      } | @base64' > /tmp/prs.txt; then
+            echo "::error::Could not list open pull requests. Nothing was swept, and every"
+            echo "::error::deadline in this file is therefore not being enforced. Fix this first."
+            exit 1
+          fi
+
+          while read -r row; do
+            [ -z "$row" ] && continue
+            j=$(printf '%s' "$row" | base64 -d)
+
+            n=$(printf '%s'      "$j" | jq -r '.n')
+            draft=$(printf '%s'  "$j" | jq -r '.draft')
+            mergeable=$(printf '%s' "$j" | jq -r '.mergeable')
+            automerge=$(printf '%s'  "$j" | jq -r '.automerge')
+            labels=$(printf '%s' "$j" | jq -r '.labels | join(" ")')
+            ref=$(printf '%s'    "$j" | jq -r '.ref')
+            sha=$(printf '%s'    "$j" | jq -r '.sha')
+            owner=$(printf '%s'  "$j" | jq -r '.owner')
+
+            # A fork's pull request is untrusted and could not merge anyway; leave it for a human.
+            if [ "$owner" != "${GH_REPO%%/*}" ]; then
+              echo "#${n}: from a fork — leaving it"
+              continue
+            fi
+            # A draft is somebody's deliberate "not yet", including this file's own parking.
+            if [ "$draft" = "true" ]; then
+              echo "#${n}: draft — leaving it"
+              continue
+            fi
+            case " $labels " in
+              *' review:parked '*) echo "#${n}: parked — leaving it"; continue ;;
+            esac
+
+            # The head commit's date, one REST call per pull request. Not `updatedAt`, which
+            # also moves when a bot comments — and this file comments — so using it would let a
+            # pull request reset its own deadlines simply by being nagged about them.
+            last=$(gh api "repos/${GH_REPO}/commits/${sha}" --jq '.commit.committer.date' 2>/dev/null || true)
+            if [ -z "$last" ]; then
+              echo "#${n}: could not read the head commit date — skipping rather than guessing"
+              continue
+            fi
+
+            pushed=$(date -u -d "$last" +%s 2>/dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$last" +%s)
+            mins=$(( (now - pushed) / 60 ))
+            hours=$(( mins / 60 ))
+            days=$(( hours / 24 ))
+
+            # ---- 4. abandoned -------------------------------------------------------------
+            if [ "$days" -ge "$ABANDON_DAYS" ]; then
+              echo "#${n}: no commit for ${days} days — closing"
+              gh pr comment "$n" --repo "$GH_REPO" --body \
+                "Closing: no commit on \`${ref}\` for ${days} days. The branch is left in place, so reopening loses nothing. If this work still matters, it needs an issue describing what remains — a pull request nobody has touched in a week is not a plan." || true
+              gh pr close "$n" --repo "$GH_REPO" || true
+              acted=$((acted + 1))
+              continue
+            fi
+
+            # ---- 3. conflicted ------------------------------------------------------------
+            if [ "$mergeable" = "CONFLICTING" ] && [ "$hours" -ge "$CONFLICT_HOURS" ]; then
+              echo "#${n}: conflicting for ${hours}h — drafting"
+              gh pr edit "$n" --repo "$GH_REPO" --add-label 'stale:conflicting' || true
+              gh pr ready "$n" --repo "$GH_REPO" --undo || true
+              gh pr comment "$n" --repo "$GH_REPO" --body \
+                "Converted to draft: \`${ref}\` has conflicted with main for ${hours} hours. No agent in this repository rebases, so this cannot merge however green the review is. Whoever picks it up: rebase on main, push, and mark it ready — that re-runs the review from scratch." || true
+              acted=$((acted + 1))
+              continue
+            fi
+
+            # ---- 2. refused, and nothing came back ----------------------------------------
+            # `review:changes-requested` is set by `review` whenever a verdict refuses the
+            # pull request, whether or not the findings could be delivered to an agent. While
+            # it is there, rule 1 must not release the pull request: that label is the
+            # refusal itself, and only a later clean verdict removes it.
+            case " $labels " in
+              *' review:changes-requested '*)
+                if [ "$hours" -ge "$GHOSTED_HOURS" ]; then
+                  echo "#${n}: refused, no push for ${hours}h — parking"
+                  gh pr edit "$n" --repo "$GH_REPO" --add-label 'review:parked' || true
+                  gh pr ready "$n" --repo "$GH_REPO" --undo || true
+                  gh pr comment "$n" --repo "$GH_REPO" --body \
+                    "Parked: the review asked for changes ${hours} hours ago and no push to \`${ref}\` followed. Either the findings never reached an agent, or the session that wrote this had already finished and could not be resumed, or it decided the findings were wrong without saying so. The findings are in the comments above; nothing here merges until a review comes back \`VERDICT: CLEAN\`." || true
+                  gh issue create --repo "$GH_REPO" \
+                    --title "Review on #${n} was refused and never answered" \
+                    --label 'blocked' \
+                    --body "$(printf 'Pull request #%s was refused by the reviewer and received no push within %s hours. It is now parked as a draft.\n\nCheck which of these it is, because they need different fixes:\n\n- The relay comment says it delivered the findings, and Jules did nothing. The session had most likely already completed, so `sendMessage` was accepted but idle. The fallback that starts a session on the branch is the thing to look at.\n- The relay comment says there was no session id in the body. This came from a lane that is not Jules, so there is no author to send findings to and it will always land here.\n- There is no relay comment at all. `review` reached a verdict and then failed; see its run log.\n' "$n" "$GHOSTED_HOURS")" || true
+                  acted=$((acted + 1))
+                else
+                  echo "#${n}: refused ${hours}h ago — waiting for a push"
+                fi
+                continue
+                ;;
+            esac
+
+            # ---- 1. no verdict: release on `test` alone ------------------------------------
+            if [ "$automerge" = "true" ]; then
+              echo "#${n}: already queued for merge"
+              continue
+            fi
+            if [ "$mins" -ge "$GRACE_MINUTES" ]; then
+              echo "#${n}: ${mins} minutes with no verdict — releasing on \`test\`"
+              gh pr merge "$n" --repo "$GH_REPO" --auto --squash --delete-branch || true
+              gh pr comment "$n" --repo "$GH_REPO" --body \
+                "Queued for merge without a review. No verdict arrived within ${GRACE_MINUTES} minutes, so \`test\` is the only gate on this one. That is deliberate: a reviewer that is down must not be able to stop the project while nobody is watching. Check the \`review\` workflow if this keeps happening." || true
+              acted=$((acted + 1))
+            else
+              echo "#${n}: ${mins} minutes old, waiting for a verdict"
+            fi
+          done < /tmp/prs.txt
+
+          echo "swept: ${acted} pull request(s) acted on"

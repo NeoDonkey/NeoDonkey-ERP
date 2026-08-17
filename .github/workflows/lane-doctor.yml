@@ -1,0 +1,275 @@
+name: lane-doctor
+
+# Checks that the autonomous lanes can still do the things they are supposed to do, and says
+# so out loud when they cannot.
+#
+# Why this exists. On 2026-08-13 the audit lane discovered its own token could open issues but
+# not push a branch, so it could never open the pull request that lands its work. It reported
+# this the only way it could — by opening an issue (#14, #17). Nothing was listening. Over the
+# next four days the lane re-verified the same fix and re-filed it eight times: #13, #15, #16,
+# #18, #19, #21, #24, #25, #37, #39, #41. Ten runs of correct work, none of it landable, and
+# the repository looked busy the whole time.
+#
+# The same day, the provider probe in the audit lane started returning `000000` instead of a
+# status code and quietly disabled itself. Also invisible.
+#
+# A credential or a provider that has silently stopped working is the most expensive failure
+# this repository has, because everything keeps running and nothing arrives. So: check the
+# capabilities directly, every day, and turn a broken one into a single issue that stays open
+# until it is fixed — and closes itself when it is.
+
+on:
+  schedule:
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+  # Also on any change to this file, so a change to the checks is verified by running them.
+  pull_request:
+    paths: ['.github/workflows/lane-doctor.yml']
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: lane-doctor
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Can the agent token do the work the lanes need?
+        id: token
+        env:
+          # The whole point is to test this token rather than the workflow's own, which is
+          # known to work and is not what the lanes use.
+          AGENT_PAT: ${{ secrets.AGENT_PAT }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          probe_ref="lane-doctor/probe-${GITHUB_RUN_ID}"
+          fail=0
+          report() { printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; echo "$1"; }
+
+          report '### Agent token (`AGENT_PAT`)'
+          report ''
+
+          if [ -z "${AGENT_PAT:-}" ]; then
+            report '- **not set** — the lanes fall back to `GITHUB_TOKEN`, whose pull requests do not trigger `test` or the review. Work opened by a lane would never be checked.'
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=AGENT_PAT is not set" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          api() {  # method, path, [body] → prints HTTP status, body to /tmp/body.json
+            if [ -n "${3:-}" ]; then
+              curl -sS -o /tmp/body.json -w '%{http_code}' --max-time 30 -X "$1" \
+                -H "Authorization: Bearer ${AGENT_PAT}" \
+                -H 'Accept: application/vnd.github+json' \
+                -H 'Content-Type: application/json' \
+                -d "$3" "https://api.github.com$2"
+            else
+              curl -sS -o /tmp/body.json -w '%{http_code}' --max-time 30 -X "$1" \
+                -H "Authorization: Bearer ${AGENT_PAT}" \
+                -H 'Accept: application/vnd.github+json' "https://api.github.com$2"
+            fi
+          }
+
+          # --- read -----------------------------------------------------------------------
+          code=$(api GET "/repos/${GH_REPO}")
+          if [ "$code" = "200" ]; then
+            report '- read the repository: **yes**'
+          else
+            report "- read the repository: **no** (HTTP ${code}) — the token is expired or revoked."
+            fail=1
+          fi
+
+          # --- push a branch. This is the capability the audit lane is missing, and the one
+          # --- that decides whether it can ever open a pull request. Creating and deleting a
+          # --- throwaway ref proves it without touching any real branch.
+          code=$(api GET "/repos/${GH_REPO}/git/ref/heads/main")
+          sha=$(jq -r '.object.sha // empty' /tmp/body.json)
+          if [ -n "$sha" ]; then
+            code=$(api POST "/repos/${GH_REPO}/git/refs" \
+              "$(jq -nc --arg r "refs/heads/${probe_ref}" --arg s "$sha" '{ref:$r, sha:$s}')")
+            if [ "$code" = "201" ]; then
+              report '- push a branch: **yes**'
+              api DELETE "/repos/${GH_REPO}/git/refs/heads/${probe_ref}" >/dev/null
+            else
+              report "- push a branch: **no** (HTTP ${code}: $(jq -r '.message // "?"' /tmp/body.json)) — the lane can verify a fix but never land it. This is the failure that produced eight duplicate issues in August 2026."
+              fail=1
+            fi
+          else
+            report '- push a branch: **could not test** — the token cannot read `refs/heads/main`.'
+            fail=1
+          fi
+
+          # --- comment. Needed to answer a review, and to say "this finding is wrong". The
+          # --- target is whichever issue is newest rather than a fixed number, which would
+          # --- rot the first time that issue was closed. The comment is deleted immediately.
+          code=$(api GET "/repos/${GH_REPO}/issues?state=all&per_page=1")
+          victim=$(jq -r '.[0].number // empty' /tmp/body.json)
+          if [ -z "$victim" ]; then
+            report '- comment on an issue: **could not test** — this repository has no issue to comment on.'
+          else
+            code=$(api POST "/repos/${GH_REPO}/issues/${victim}/comments" \
+              "$(jq -nc --arg b "lane-doctor capability probe, run ${GITHUB_RUN_ID}. Deleted immediately; if you are reading it, the delete failed." '{body:$b}')")
+            if [ "$code" = "201" ]; then
+              report '- comment on an issue: **yes**'
+              cid=$(jq -r '.id' /tmp/body.json)
+              api DELETE "/repos/${GH_REPO}/issues/comments/${cid}" >/dev/null
+            else
+              report "- comment on an issue: **no** (HTTP ${code}) — a relayed review cannot be answered and findings cannot be disputed."
+              fail=1
+            fi
+          fi
+
+          if [ "$fail" = "0" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=AGENT_PAT is missing a capability a lane needs — see the run summary" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Can the review reach Jules?
+        id: jules
+        env:
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+        run: |
+          set -uo pipefail
+          report() { printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; echo "$1"; }
+          report ''
+          report '### Jules API (`JULES_API_KEY`)'
+          report ''
+
+          if [ -z "${JULES_API_KEY:-}" ]; then
+            report '- **not set** — no session can be started and no review can be relayed. The whole autonomous loop is off.'
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=JULES_API_KEY is not set" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          code=$(curl -sS -o /tmp/jules.json -w '%{http_code}' --max-time 30 \
+            -H "x-goog-api-key: ${JULES_API_KEY}" \
+            'https://jules.googleapis.com/v1alpha/sources' || printf '000')
+          if [ "$code" = "200" ]; then
+            report '- key accepted: **yes**'
+            if jq -e --arg r "${GITHUB_REPOSITORY}" '.sources[]? | select(.name == "sources/github/" + $r)' /tmp/jules.json >/dev/null 2>&1; then
+              report '- this repository is a connected source: **yes**'
+            else
+              report '- this repository is a connected source: **no** — `sources/github/'"${GITHUB_REPOSITORY}"'` is not in the list, so a session cannot be created against it. Reconnect the repository in the Jules GitHub app.'
+              echo "ok=false" >> "$GITHUB_OUTPUT"
+              echo "detail=the repository is not a connected Jules source" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            report "- key accepted: **no** (HTTP ${code}) — expired, revoked, or out of quota."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=the Jules API rejected the key (HTTP ${code})" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Will a review provider answer?
+        id: provider
+        env:
+          ZEN_KEY: ${{ secrets.OPENCODE_API_KEY }}
+          OR_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          # Must match the model in `review` and `audit`. If you change it there, change it
+          # here — this check is worthless if it probes a different model than the lanes use.
+          OR_MODEL: nvidia/nemotron-3-ultra-550b-a55b:free
+        run: |
+          set -uo pipefail
+          report() { printf '%s\n' "$1" >> "$GITHUB_STEP_SUMMARY"; echo "$1"; }
+          report ''
+          report '### Review providers'
+          report ''
+          probe() {
+            local code
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+              -X POST "$1" -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}")
+            [ -n "$code" ] && printf '%s' "$code" || printf '000'
+          }
+          any=0
+          fail_model=0
+          if [ -n "${ZEN_KEY:-}" ]; then
+            c=$(probe https://opencode.ai/zen/v1/chat/completions "$ZEN_KEY" big-pickle)
+            [ "$c" = "200" ] && { report '- opencode zen: **answering**'; any=1; } || report "- opencode zen: **HTTP ${c}**"
+          else
+            report '- opencode zen: key not set'
+          fi
+          if [ -n "${OR_KEY:-}" ]; then
+            c=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" "$OR_MODEL")
+            case "$c" in
+              200) report '- openrouter: **answering**'; any=1 ;;
+              # 404 is a config bug, not a quota problem, and the two need opposite
+              # responses — one is "fix the model id", the other is "wait". They were
+              # indistinguishable on 2026-08-17, when the configured model was
+              # `deepseek/deepseek-v4-flash:free`, which does not exist on OpenRouter. The
+              # fallback had never run because the key was unset, so nobody had seen the 404.
+              404) report "- openrouter: **HTTP 404 — the model \`${OR_MODEL}\` does not exist.** The key is fine; the model id is wrong. Pick one from https://openrouter.ai/models?max_price=0 that supports tool calling, and change it in \`review\`, \`audit\` and here."; fail_model=1 ;;
+              401|403) report "- openrouter: **HTTP ${c} — the key was rejected.** Expired, revoked, or mistyped." ;;
+              429) report '- openrouter: **HTTP 429 — rate limited.** Free models allow 20 requests a minute and 50 a day without purchased credits, and one agentic review spends many requests. Expected to happen; it means no review today, not a broken setup.' ;;
+              *)   report "- openrouter: **HTTP ${c}**" ;;
+            esac
+          else
+            report '- openrouter: key not set — there is no fallback. If zen is rate-limited, nothing gets reviewed and every pull request merges on `test` alone after the grace period.'
+          fi
+          # A misconfigured fallback is reported even while zen is answering. Otherwise it stays
+          # invisible until the day zen is down, which is the one day it was needed.
+          if [ "$fail_model" = "1" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=the OpenRouter fallback names a model that does not exist, so there is no fallback — see the run summary" >> "$GITHUB_OUTPUT"
+          elif [ "$any" = "1" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "detail=no review provider answered" >> "$GITHUB_OUTPUT"
+          fi
+
+      # A summary nobody reads is the same as no check at all. Turn a broken capability into
+      # one issue that stays open until it is fixed, and closes itself when it is.
+      - name: Report
+        if: always() && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TITLE: 'lane-doctor: an autonomous lane has lost a capability'
+          TOKEN_OK: ${{ steps.token.outputs.ok }}
+          TOKEN_DETAIL: ${{ steps.token.outputs.detail }}
+          JULES_OK: ${{ steps.jules.outputs.ok }}
+          JULES_DETAIL: ${{ steps.jules.outputs.detail }}
+          PROVIDER_OK: ${{ steps.provider.outputs.ok }}
+          PROVIDER_DETAIL: ${{ steps.provider.outputs.detail }}
+        run: |
+          set -uo pipefail
+          broken=""
+          [ "${TOKEN_OK}" != "true" ]    && broken="${broken}- ${TOKEN_DETAIL:-the agent token failed its check}"$'\n'
+          [ "${JULES_OK}" != "true" ]    && broken="${broken}- ${JULES_DETAIL:-the Jules API failed its check}"$'\n'
+          [ "${PROVIDER_OK}" != "true" ] && broken="${broken}- ${PROVIDER_DETAIL:-no review provider answered}"$'\n'
+
+          existing=$(gh issue list --repo "$GH_REPO" --state open --search "\"$TITLE\" in:title" \
+            --json number --jq '.[0].number // empty')
+
+          if [ -z "$broken" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$GH_REPO" --body \
+                "Every capability is back: the agent token can push and comment, the Jules API accepts the key, and a review provider is answering. Closing." || true
+              gh issue close "$existing" --repo "$GH_REPO" || true
+            fi
+            echo "all capabilities healthy"
+            exit 0
+          fi
+
+          body=$(printf 'The daily capability check found something the autonomous lanes need and cannot do:\n\n%s\nFull detail: %s/%s/actions/runs/%s\n\nWhy this is worth interrupting for: when a capability disappears, the lanes keep running and keep looking productive. In August 2026 a token that could not push produced ten runs of verified work and eight duplicate issues before anyone noticed. This issue stays open until the check passes, then closes itself.\n' \
+            "$broken" "${GITHUB_SERVER_URL}" "$GH_REPO" "$GITHUB_RUN_ID")
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --repo "$GH_REPO" \
+              --body "$(printf 'Still broken as of this run.\n\n%s' "$body")" || true
+          else
+            gh issue create --repo "$GH_REPO" --title "$TITLE" --label 'blocked' --body "$body" || true
+          fi
+          echo "::warning::A lane capability is broken — see the issue."

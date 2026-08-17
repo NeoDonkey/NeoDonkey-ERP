@@ -74,12 +74,16 @@ you are in before you edit anything.
 
 | Lane | Planning file | Does | Edits |
 |---|---|---|---|
-| **A — build** | `docs/NEXT.md` | Implements entries from the release blocker set | `operating-model/`, `runtime/`, `demo/`, `docs/COMPROMISES.md`, `docs/JOURNAL.md` |
-| **B — audit** | `docs/AUDIT.md` | Verifies that what we claim is true, and writes the tests that keep it true | `test/`, `docs/AUDIT.md` |
+| **A — build** | `docs/NEXT.md` | Implements entries from the release blocker set | `operating-model/`, `runtime/`, `demo/`, `docs/COMPROMISES.md`, `docs/journal/` |
+| **B — audit** | `docs/AUDIT.md` | Verifies that what we claim is true, and writes the tests that keep it true | `test/`, `docs/AUDIT.md`, `docs/journal/` |
 
-Lane B never edits the register, the build backlog or the journal. It records findings in
-`docs/AUDIT.md`; lane A folds them in and acts on them. That makes the two a pipeline rather than
-a collision. Lane A does not write to `docs/AUDIT.md`.
+Lane B never edits the register or the build backlog. It records findings in `docs/AUDIT.md`; lane A
+folds them in and acts on them. That makes the two a pipeline rather than a collision. Lane A does
+not write to `docs/AUDIT.md`.
+
+Both lanes write to `docs/journal/`, and that is safe because each entry is its own file — see §9.
+`docs/AUDIT.md` is still a single shared file, so if two audit sessions ever run at once, the second
+one records its findings in its journal entry rather than fighting for the same lines.
 
 If you were given no lane, you are in lane A.
 
@@ -165,7 +169,7 @@ suggests, and the parser, ledger, live layer and sync path are built and tested.
 ## 6. Verifying
 
 ```bash
-npm test          # 641 tests, about 30 seconds. Must be green before opening a PR.
+npm test          # 662 tests, about 30 seconds. Must be green before opening a PR.
 npm run demo      # the acceptance demo, end to end
 npm run ui        # then open http://localhost:8080
 ```
@@ -176,14 +180,57 @@ nothing in it is asserted from a report — status is re-checked against the cod
 
 ---
 
-## 7. Autonomous Scheduled Sessions & Execution
+## 7. Autonomous sessions, and the review loop
 
-This repository is designed for **100% autonomous background execution** via Google Jules scheduled sessions.
+This repository runs unattended for days at a time. Nobody will answer a question, approve a
+plan, or publish your pull request for you.
 
-- **Zero Human-in-the-Loop:** During scheduled sessions, there is no human available to respond to messages, approve plans, or publish PRs. Do NOT wait for human confirmation, ask clarifying questions, or request plan approval.
-- **Autonomous Execution:** Independently select the next item (from `docs/NEXT.md` or issue queue), implement the change, verify with `npm test`, and finalize the work.
-- **Auto-Publish Pull Requests:** Always publish/submit the pull request at the end of the session as **ready for review** (non-draft). Do not leave PRs in draft or pending state.
-- **Auto-Merge:** Once published, `.github/workflows/auto-merge.yml` automatically queues and merges the PR once CI checks pass.
+- **No human in the loop.** Do not wait for confirmation, ask clarifying questions, or request
+  plan approval. If a decision is genuinely not yours to make, §6 says what to do: open an issue
+  labelled `needs-decision` and pick something else.
+- **Publish, do not park.** Open the pull request **ready for review**, not as a draft. A draft
+  is invisible to everything downstream — nothing reviews it and nothing merges it.
+- **Then answer the review.** Your pull request is not finished when you open it. It is finished
+  when a review comes back clean.
+
+### The loop, exactly
+
+1. You open a pull request. `test` and `review` both start.
+2. `review` reads the diff against this file and posts findings ending in one line:
+   `VERDICT: CLEAN` or `VERDICT: CHANGES_REQUIRED`.
+3. **CLEAN** → auto-merge is enabled and GitHub merges it once `test` is green.
+4. **CHANGES_REQUIRED** → the pull request is labelled `review:changes-requested` and **nothing
+   merges while that label is present**. The findings are sent to you — as a message in your own
+   Jules session, addressed by the session id in your pull request body.
+5. You fix them **on the same branch** and push. Do not open a second pull request; the existing
+   one updates itself, and a second one splits the review. Your push starts the loop again.
+6. After **three** rounds without a clean verdict the pull request is drafted, labelled
+   `review:parked`, and an issue is opened. It then waits for a human, which may be a week.
+
+**A finding you believe is wrong is not an instruction.** Change nothing, and say why in a comment
+on the pull request, citing the file and line. The reviewer is a model reading a diff and it has
+been wrong before; a wrong fix applied to satisfy it is worse than an argument. But say so — a
+silent refusal looks identical to a session that died, and gets parked as one.
+
+### What happens when the machinery fails
+
+Worth knowing, because it decides whether being slow is safe:
+
+- **No review at all** — provider down, rate-limited, runner lost. After 45 minutes
+  `merge-sweeper` releases the pull request on `test` alone and says so in a comment. The
+  reviewer holding the queue can never deadlock it; absence of a review is not a veto.
+- **Refused and never answered** — after 12 hours with no push, `merge-sweeper` parks it.
+- **Conflicted with main** — after 24 hours it is drafted and labelled `stale:conflicting`.
+  Nothing in this repository rebases, so a conflict is fatal until someone rebases it by hand.
+  This is why you check what is already in flight before starting.
+- **Untouched for 7 days** — closed. The branch is left in place.
+
+The relevant files are `.github/workflows/opencode-review.yml` (review, relay, park) and
+`.github/workflows/merge-sweeper.yml` (every deadline above). `lane-doctor.yml` checks daily that
+the tokens and providers all three lanes depend on still work, and opens one issue when they do
+not — because a credential that silently stops working is this repository's most expensive
+failure. In August 2026 a token that could not push branches went unnoticed for five days while
+the audit lane filed the same finding eleven times.
 
 ---
 
@@ -204,19 +251,41 @@ git config --local user.email "226692358+danielfrommunich@users.noreply.github.c
   boilerplate sign-offs.
 - Open one pull request against `main` and fill in the template honestly — including what you did
   *not* finish.
-- Ensure the pull request is marked **ready for review** (not draft) when work is verified, so auto-merge can process it without human intervention.
-- CI must be green. The merge is automatic once it is; nothing merges on a red build.
+- Ensure the pull request is marked **ready for review** (not draft) when work is verified. A
+  draft is reviewed by nothing and merged by nothing.
+- CI must be green, and the review must come back clean. Nothing merges on a red build, and
+  nothing merges while `review:changes-requested` is set — see §7 for the loop and its deadlines.
 
 ---
 
 ## 9. Before you finish
 
-Leave the repository so the next change can start without archaeology:
+Leave the repository so the next change can start without archaeology.
 
-- **`docs/NEXT.md`** — rewrite it: what was done, what remains, what is blocked, and the single
-  most useful thing to pick up next. This file is read first, so it is the one that matters.
-- **`docs/JOURNAL.md`** — add an entry at the top under today's date (`YYYY-MM-DD`), a few lines
-  on what changed.
+**Write only files no other session is writing.** Up to three sessions run at once here, and nothing
+in this repository rebases, so a file two sessions both edit is a conflict — and a conflicted pull
+request is not merely unmergeable, it is unreviewable: GitHub cannot compute a merge commit for it
+and therefore runs no checks on it at all. That is why the first item below is a new file rather than
+an edit, and why the second is conditional.
+
+- **`docs/journal/YYYY-MM-DD-short-slug.md`** — **create a new file.** A few paragraphs: what
+  changed and why, not a restatement of the diff. Name it for the change
+  (`2026-08-17-close-the-review-loop.md`). Do **not** append to `docs/JOURNAL.md`; that is the
+  archive of the old convention, and appending to it is what made every parallel session collide.
+- **`docs/NEXT.md`** — rewrite it **only if you changed the plan**: you closed the item it names,
+  found something more urgent, or discovered that what it says is no longer true. If you did a piece
+  of work the file already anticipated and the next step is unchanged, leave it alone and say so in
+  the pull request. Most changes do not alter the plan, and a needless rewrite of this file is the
+  single most likely way to conflict with another session.
 - **`docs/COMPROMISES.md`** — if an entry was closed, move it and record how that was *verified*.
   If a new compromise was introduced, add it with a category, an owner and an exit path. An
   undocumented compromise is the one thing this project treats as a real failure.
+
+  This file is shared and cannot be split, so touch it only when a compromise genuinely changed
+  state. Check the open pull requests first: if another session is already editing it, do your work
+  and record the register change in your journal entry instead, naming the entry that needs moving.
+  Two sessions rewriting the register is worse than one delayed correction.
+
+  And verify before you close: on 2026-08-17 entry #13 was found marked CLOSED while the code it
+  describes was untouched — the grammar had landed and nothing had adopted it. Closing an entry
+  means you executed the thing, not that you read about it.

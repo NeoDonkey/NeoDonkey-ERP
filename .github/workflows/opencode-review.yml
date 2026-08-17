@@ -1,9 +1,33 @@
 name: review
 
-# Reviews every pull request against this project's own rules. It comments; it does not
-# gate. The required check is `test` and stays that way: if this reviewer is rate-limited
-# or down, work must still be able to merge. A reviewer that can block the queue while
-# nobody is watching is worse than no reviewer.
+# Reviews every pull request against this project's own rules, and — this is the part that
+# was missing — makes the review reach the agent that wrote the code.
+#
+# What was broken until 2026-08-17: the review was advice nobody read. `auto-merge` queued
+# every pull request the moment it opened, `test` was the only required check, and it takes
+# about a minute. The review takes three. On #42 the pull request merged at 04:51:45 and the
+# review — which correctly found that a document claimed 658 tests where the suite ran 661 —
+# was posted at 04:53:49, two minutes into the past. Every review ever written by this
+# workflow landed on a closed pull request.
+#
+# Commenting harder would not have fixed it. Jules states its own rule on every pull request
+# it opens: "For security, I will only act on instructions from the user who triggered this
+# task." This workflow comments as `github-actions`, so a GitHub comment is a channel Jules
+# is required to ignore. The only way in is the Jules API, addressing the session by the id
+# that appears in the pull request body.
+#
+# So the loop is: review → verdict → if the verdict is CHANGES_REQUIRED, deliver the findings
+# into the live Jules session → Jules pushes to the same branch → `synchronize` fires this
+# workflow again → next round. Three rounds, then the pull request is parked for a human.
+#
+# The gate and its release valve. A CLEAN verdict is what enables auto-merge, so the reviewer
+# now holds the queue — which the previous version of this file deliberately refused to allow,
+# on the grounds that "a reviewer that can block the queue while nobody is watching is worse
+# than no reviewer". That reasoning still stands, and it is why the gate can only ever slow
+# the queue and never deadlock it: if this workflow produces no verdict at all — provider down,
+# rate-limited, runner lost, this file broken — nothing here enables auto-merge and nothing
+# here blocks it either. `merge-sweeper` notices the silence and releases the pull request on
+# `test` alone after a grace period. Absence of a review is not a veto.
 
 on:
   pull_request:
@@ -20,6 +44,11 @@ concurrency:
   group: review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  # After this many relay rounds without a clean verdict, stop and park. Two agents that have
+  # not converged in three exchanges are not converging; they are burning quota.
+  MAX_ROUNDS: 3
+
 jobs:
   review:
     runs-on: ubuntu-latest
@@ -31,14 +60,27 @@ jobs:
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false &&
       !startsWith(github.event.pull_request.head.ref, 'opencode/')
-    # Never fail the pull request. This job is advice, not a gate.
-    continue-on-error: true
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           persist-credentials: false
+
+      # The reviewer has write tools and sometimes decides to use them, even though this
+      # prompt asks it to review rather than fix. When it tried on #43 it hit a bare
+      # checkout with no git identity, and posted git's own error as its review:
+      # "Author identity unknown. *** Please tell me who you are." The verdict came back
+      # UNKNOWN and the pull request fell through to the grace timer — safe, but a review
+      # silently replaced by a git error message.
+      #
+      # An identity here does not let anything reach main: `persist-credentials: false`
+      # above means there is no token to push with. It just stops a local commit from
+      # aborting and eating the review.
+      - name: Give git an identity, so a stray commit cannot eat the review
+        run: |
+          git config user.name  "opencode review"
+          git config user.email "opencode-review@users.noreply.github.com"
 
       - name: Choose a provider that will answer
         id: probe
@@ -47,24 +89,61 @@ jobs:
           OR_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           set -uo pipefail
+          # Prints the HTTP status, or 000 if curl itself failed. The `||` branch must
+          # substitute for the status rather than follow it: written as `... || echo 000`
+          # on the same pipeline, a curl that times out printed `000` and then `000` again,
+          # and the caller compared "000000" against "200". Observed in the audit lane
+          # 2026-08-17, where it silently disabled the fallback for a day.
           probe() {
-            curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+            local code
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
               -X POST "$1" -H "Authorization: Bearer $2" -H 'Content-Type: application/json' \
-              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}" \
-              || echo 000
+              -d "{\"model\":\"$3\",\"messages\":[{\"role\":\"user\",\"content\":\"ok\"}],\"max_tokens\":1}")
+            [ -n "$code" ] && printf '%s' "$code" || printf '000'
           }
-          if [ -n "${ZEN_KEY:-}" ] && [ "$(probe https://opencode.ai/zen/v1/chat/completions "$ZEN_KEY" big-pickle)" = "200" ]; then
-            echo "provider=zen"              >> "$GITHUB_OUTPUT"
-            echo "model=opencode/big-pickle" >> "$GITHUB_OUTPUT"
-          elif [ -n "${OR_KEY:-}" ] && [ "$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" deepseek/deepseek-v4-flash:free)" = "200" ]; then
-            echo "provider=openrouter" >> "$GITHUB_OUTPUT"
-            echo "model=openrouter/deepseek/deepseek-v4-flash:free" >> "$GITHUB_OUTPUT"
-          else
-            echo "provider=none" >> "$GITHUB_OUTPUT"
-            echo "::notice::No provider available — this pull request goes unreviewed. It is not blocked; `test` is the gate."
+          if [ -n "${ZEN_KEY:-}" ]; then
+            code=$(probe https://opencode.ai/zen/v1/chat/completions "$ZEN_KEY" big-pickle)
+            echo "zen: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "provider=zen"              >> "$GITHUB_OUTPUT"
+              echo "model=opencode/big-pickle" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
+          # The fallback, and it costs nothing: `:free` models on OpenRouter are $0, no card.
+          #
+          # It was dead until 2026-08-17. The model was `deepseek/deepseek-v4-flash:free`,
+          # which does not exist on OpenRouter — the probe returned 404. Nobody noticed for
+          # five days because OPENROUTER_API_KEY was unset, so the branch never ran: an
+          # untested fallback and an absent one look identical from the outside.
+          #
+          # What this fallback is and is not. Free models are capped at 20 requests a minute
+          # and 50 a DAY on an account with no credits purchased. An agentic review spends one
+          # request per tool call, so 50 a day is roughly one to three reviews — enough to
+          # cover a zen outage, not enough to be a second full-time reviewer. When it runs out
+          # the probe returns 429, no verdict is produced, and merge-sweeper releases the pull
+          # request on `test` alone. That is the intended behaviour, not a new failure.
+          #
+          # Nemotron 3 Ultra is chosen over the smaller free models deliberately: a weak
+          # reviewer is worse than none here, because a wrong CHANGES_REQUIRED burns three
+          # relay rounds of Jules quota and then parks work that was fine.
+          if [ -n "${OR_KEY:-}" ]; then
+            code=$(probe https://openrouter.ai/api/v1/chat/completions "$OR_KEY" nvidia/nemotron-3-ultra-550b-a55b:free)
+            echo "openrouter: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "provider=openrouter" >> "$GITHUB_OUTPUT"
+              echo "model=openrouter/nvidia/nemotron-3-ultra-550b-a55b:free" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+          echo "provider=none" >> "$GITHUB_OUTPUT"
+          echo "::notice::No provider answered — this pull request goes unreviewed. It is not blocked: merge-sweeper releases it on \`test\` alone."
 
-      - if: steps.probe.outputs.provider != 'none'
+      - id: agent
+        if: steps.probe.outputs.provider != 'none'
+        # Advice, not a gate — but note that a crash here produces no verdict rather than a
+        # CLEAN one, so a broken reviewer cannot wave work through either.
+        continue-on-error: true
         uses: anomalyco/opencode/github@latest
         env:
           OPENCODE_API_KEY: ${{ secrets.OPENCODE_API_KEY }}
@@ -80,6 +159,13 @@ jobs:
             it states the rules this project actually answers to. Be concise and specific:
             file and line, what is wrong, why it matters here. No praise, no summary of
             the diff, no generic advice.
+
+            You are reviewing, not fixing. Do not edit any file, do not stage anything, and
+            do not commit. Your entire output is one comment. The author is a different agent
+            and it is their job to act on what you find — a fix you make here cannot reach the
+            branch anyway, because this checkout has no credentials to push with, so the only
+            thing an attempted commit achieves is replacing your review with a git error. That
+            happened on #43.
 
             Refuse-worthy findings, in priority order. These are not style preferences;
             each one breaks a stated commitment:
@@ -106,3 +192,265 @@ jobs:
             Then, briefly, real correctness bugs in the changed lines.
 
             If you find nothing, say so in one line. Do not invent findings to look useful.
+
+            ---
+
+            END YOUR REVIEW WITH A VERDICT
+
+            The last line of your comment must be exactly one of these two, on its own line,
+            with nothing after it:
+
+            VERDICT: CLEAN
+            VERDICT: CHANGES_REQUIRED
+
+            This line is read by a script and it decides what happens next, so choose it
+            deliberately:
+
+            - CHANGES_REQUIRED sends your findings back to the agent that wrote this code and
+              asks it to push a fix. Nothing merges until the next round comes back clean.
+            - CLEAN allows the pull request to merge once `test` passes.
+
+            Use CHANGES_REQUIRED only for a refuse-worthy finding above, or a real correctness
+            bug in the changed lines. Everything else is CLEAN: state the nit and pass it. A
+            nit, a preference, a "could be tidier", a doubt you cannot substantiate, or
+            anything you would merge yourself is CLEAN.
+
+            Nobody is watching this repository for days at a stretch. A wrong
+            CHANGES_REQUIRED costs three rounds of two agents' quota and then parks the work
+            until a human returns. Hold the bar there.
+
+      # ---------------------------------------------------------------------------------
+      # From here on the job is plumbing: read the verdict, act on it. `always()` because
+      # the reviewer above is allowed to fail and the verdict still has to be resolved —
+      # to UNKNOWN, which hands the pull request to merge-sweeper rather than stalling it.
+      # ---------------------------------------------------------------------------------
+
+      - name: Read the verdict
+        id: verdict
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+
+          # The opencode action signs each comment with a link to the run that produced it,
+          # so this finds the comment belonging to *this* run rather than a previous round's.
+          body=""
+          for attempt in 1 2 3; do
+            body=$(gh api "repos/${GH_REPO}/issues/${PR}/comments" --paginate \
+              --jq "[.[] | select(.body | contains(\"runs/${GITHUB_RUN_ID}\"))] | last | .body // empty" 2>/dev/null || true)
+            [ -n "$body" ] && break
+            echo "no comment from this run yet (attempt ${attempt}) — waiting"
+            sleep 10
+          done
+
+          if [ -z "$body" ]; then
+            echo "verdict=UNKNOWN" >> "$GITHUB_OUTPUT"
+            echo "::notice::No review comment from this run. Verdict UNKNOWN — merge-sweeper will release this pull request on \`test\` alone."
+            exit 0
+          fi
+
+          # CHANGES_REQUIRED is tested first on purpose: a review that somehow contains both
+          # strings is treated as asking for changes. Fail towards not merging.
+          if printf '%s' "$body" | grep -qE 'VERDICT:[[:space:]]*CHANGES_REQUIRED'; then
+            echo "verdict=CHANGES_REQUIRED" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$body" | grep -qE 'VERDICT:[[:space:]]*CLEAN'; then
+            echo "verdict=CLEAN" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=UNKNOWN" >> "$GITHUB_OUTPUT"
+            echo "::warning::The reviewer commented but emitted no VERDICT line. Treating as UNKNOWN."
+          fi
+
+          # Hand the review text to the relay step through a file. It is untrusted model
+          # output and must never be interpolated into a shell command or a workflow
+          # expression.
+          printf '%s' "$body" > "${RUNNER_TEMP}/review.md"
+
+      # The label, not the relay, is what holds the merge. Set it before anything that can
+      # fail, because the alternative has a hole in it: a refused pull request with no Jules
+      # session to relay to — anything the opencode lane opened — would carry no relay label,
+      # look untouched to merge-sweeper, and get released on `test` alone 45 minutes later.
+      # Refused work would merge precisely because the refusal could not be delivered.
+      # An UNKNOWN verdict used to be a `::warning::` in a run log nobody opens. It is the
+      # one outcome that quietly lowers the bar — the pull request goes on to merge on `test`
+      # alone — so it has to be legible on the pull request itself, and it has to name which
+      # of the two causes it was. merge-sweeper comments again 45 minutes later when it
+      # actually releases; this comment is what explains why.
+      - name: Say so when the review did not produce a verdict
+        if: always() && steps.verdict.outputs.verdict == 'UNKNOWN'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PROVIDER: ${{ steps.probe.outputs.provider }}
+        run: |
+          set -uo pipefail
+          if [ "$PROVIDER" = "none" ]; then
+            why="No review provider answered — \`OPENCODE_API_KEY\` was rate-limited or down, and \`OPENROUTER_API_KEY\` is not set, so there was no fallback."
+          else
+            why="The reviewer ran but produced no \`VERDICT:\` line. Usually it crashed part-way and posted whatever it had — check the comment above and [the run log](${GITHUB_SERVER_URL}/${GH_REPO}/actions/runs/${GITHUB_RUN_ID})."
+          fi
+          gh pr comment "$PR" --repo "$GH_REPO" --body \
+            "**This pull request was not reviewed.** ${why}
+
+          It is not blocked. \`merge-sweeper\` releases it on \`test\` alone 45 minutes after the last push, because a reviewer that is down must not be able to stop the project while nobody is watching. But it does mean this change is merging on \"the tests passed\" rather than on the AGENTS.md checks, which is a weaker bar — so if this keeps happening, fix the reviewer rather than getting used to it." || true
+
+      - name: Record that changes were requested
+        if: always() && steps.verdict.outputs.verdict == 'CHANGES_REQUIRED'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr edit "$PR" --repo "$GH_REPO" --add-label 'review:changes-requested' || true
+
+      - name: Merge on a clean verdict
+        if: always() && steps.verdict.outputs.verdict == 'CLEAN'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -uo pipefail
+          # A later round came back clean, so the earlier refusal no longer stands.
+          gh pr edit "$PR" --repo "$GH_REPO" --remove-label 'review:changes-requested' || true
+          # `--auto` hands the pull request to GitHub, which merges it only once every
+          # required check is green. Branch protection, not this line, decides.
+          gh pr merge "$PR_URL" --auto --squash --delete-branch
+          echo "clean review — queued for merge behind \`test\`"
+
+      - name: Relay the findings to the agent that wrote the code
+        if: always() && steps.verdict.outputs.verdict == 'CHANGES_REQUIRED'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          JULES_API_KEY: ${{ secrets.JULES_API_KEY }}
+          PR: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          # Untrusted: written by whoever opened the pull request. Only ever read as data.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -uo pipefail
+          review=$(cat "${RUNNER_TEMP}/review.md")
+
+          # ---- which round is this? Rounds are kept in labels, so they survive a
+          # ---- re-run and are visible to anyone reading the pull request.
+          round=0
+          for n in $(seq 1 "$MAX_ROUNDS"); do
+            if gh pr view "$PR" --repo "$GH_REPO" --json labels \
+                 --jq '[.labels[].name]|join(" ")' | grep -q "relay:${n}"; then
+              round="$n"
+            fi
+          done
+          round=$((round + 1))
+          echo "relay round ${round} of ${MAX_ROUNDS}"
+
+          # ---- out of rounds: park it and stop. Better a pull request waiting for a
+          # ---- human than two agents trading opinions for a week.
+          if [ "$round" -gt "$MAX_ROUNDS" ]; then
+            gh pr edit "$PR" --repo "$GH_REPO" --add-label 'review:parked' || true
+            # Draft is what actually stops the machinery: auto-merge, this workflow and
+            # merge-sweeper all skip drafts. The label is for the human.
+            gh pr ready "$PR" --repo "$GH_REPO" --undo || true
+            {
+              printf 'Parked after %s relay rounds without a clean review.\n\n' "$MAX_ROUNDS"
+              printf 'Converted to draft so nothing merges it. The findings below are the ones still standing after the last round. A human decides whether the reviewer is right.\n\n'
+              printf -- '---\n\n%s\n' "$review"
+            } > "${RUNNER_TEMP}/parked.md"
+            gh pr comment "$PR" --repo "$GH_REPO" --body-file "${RUNNER_TEMP}/parked.md" || true
+            gh issue create --repo "$GH_REPO" \
+              --title "Review and Jules did not converge on #${PR} after ${MAX_ROUNDS} rounds" \
+              --label 'blocked' \
+              --body "$(printf 'Pull request #%s is parked as a draft: %s\n\nThe reviewer and the authoring session exchanged %s rounds without reaching a clean verdict. Either the findings are real and the fix is harder than the lane can manage, or the reviewer is wrong and is refusing work it should pass.\n\nUnresolved findings from the final round:\n\n%s\n' "$PR" "$PR_URL" "$MAX_ROUNDS" "$review")" || true
+            echo "::warning::Parked #${PR} after ${MAX_ROUNDS} rounds."
+            exit 0
+          fi
+
+          # ---- the session id. Jules writes it into every pull request it opens, as
+          # ---- "PR created automatically by Jules for task <id>".
+          session=$(printf '%s' "${PR_BODY:-}" \
+            | grep -oE '(jules\.google\.com/(task|session)/|sessions/)[0-9]+' \
+            | grep -oE '[0-9]+' | head -1 || true)
+
+          if [ -z "$session" ]; then
+            echo "::notice::No Jules session id in the body of #${PR} — nothing to relay to. Leaving the review as a comment."
+            gh pr comment "$PR" --repo "$GH_REPO" --body \
+              "The review above asks for changes, but this pull request body carries no Jules session id, so there is no session to send it to. Whoever owns this branch: the findings are above." || true
+            exit 0
+          fi
+
+          if [ -z "${JULES_API_KEY:-}" ]; then
+            echo "::warning::JULES_API_KEY is not set — the review cannot reach session ${session}."
+            exit 0
+          fi
+
+          # ---- the message. Jules is being addressed mid-task, so it needs to know where
+          # ---- to put the fix, and that disagreeing is a permitted answer.
+          {
+            printf 'An automated reviewer has examined the pull request you opened (#%s, branch `%s`) and is asking for changes before it can merge. This is round %s of %s.\n\n' \
+              "$PR" "$HEAD_REF" "$round" "$MAX_ROUNDS"
+            printf 'What to do:\n\n'
+            printf '1. Fix these findings on the SAME branch, `%s`, and push there. Do not open a new pull request — the existing one updates itself, and a second one splits the review.\n' "$HEAD_REF"
+            printf '2. Run `npm test` before you push. It must stay green. Never weaken, skip or delete a test to get there.\n'
+            printf '3. AGENTS.md is binding for the fix, exactly as it was for the original change.\n'
+            printf '4. If a finding is wrong, do not implement it. Say so in a comment on the pull request and explain why, citing the file and line. A reviewer being wrong is an expected outcome, not something to work around.\n\n'
+            printf 'Your push re-triggers the review automatically. After %s rounds without a clean review the pull request is parked for a human, so prefer being right to being fast.\n\n' "$MAX_ROUNDS"
+            printf -- '--- reviewer findings ---\n\n%s\n' "$review"
+          } > "${RUNNER_TEMP}/message.md"
+
+          send() {  # url, json file → prints the HTTP status, body on stderr
+            curl -sS -o "${RUNNER_TEMP}/api-out.json" -w '%{http_code}' --max-time 60 \
+              -X POST "$1" \
+              -H "x-goog-api-key: ${JULES_API_KEY}" \
+              -H 'Content-Type: application/json' \
+              -d @"$2" || printf '000'
+          }
+
+          jq -Rs '{prompt: .}' < "${RUNNER_TEMP}/message.md" > "${RUNNER_TEMP}/send.json"
+          code=$(send "https://jules.googleapis.com/v1alpha/sessions/${session}:sendMessage" "${RUNNER_TEMP}/send.json")
+          echo "sendMessage → HTTP ${code}"
+          cat "${RUNNER_TEMP}/api-out.json" || true
+
+          delivered=""
+          if [ "$code" = "200" ] || [ "$code" = "204" ]; then
+            delivered="sendMessage"
+          else
+            # A session that has already delivered its pull request may no longer accept
+            # messages — the API documents sendMessage against an *active* session. Rather
+            # than lose the review, start a session on the branch itself. It costs one of
+            # the day's sessions, which is why it is the fallback and not the default.
+            echo "::notice::Session ${session} would not take a message (HTTP ${code}). Starting a session on the branch instead."
+            {
+              printf 'Branch `%s` in this repository has an open pull request (#%s) that an automated reviewer is refusing. Check out that branch, fix the findings below on it, and push to it.\n\n' \
+                "$HEAD_REF" "$PR"
+              printf 'Read AGENTS.md first; it is binding. Run `npm test` and keep it green — never weaken, skip or delete a test to pass. If a finding is wrong, change nothing and say why in a comment on #%s.\n\n' "$PR"
+              printf -- '--- reviewer findings ---\n\n%s\n' "$review"
+            } > "${RUNNER_TEMP}/fallback.md"
+
+            jq -Rs --arg src "sources/github/${GH_REPO}" --arg branch "$HEAD_REF" --arg title "Fix review findings on #${PR}" \
+              '{prompt: ., title: $title, sourceContext: {source: $src, githubRepoContext: {startingBranch: $branch}}, automationMode: "AUTO_CREATE_PR"}' \
+              < "${RUNNER_TEMP}/fallback.md" > "${RUNNER_TEMP}/new-session.json"
+
+            code2=$(send "https://jules.googleapis.com/v1alpha/sessions" "${RUNNER_TEMP}/new-session.json")
+            echo "create session → HTTP ${code2}"
+            cat "${RUNNER_TEMP}/api-out.json" || true
+            if [ "$code2" = "200" ]; then
+              delivered="a new session on \`${HEAD_REF}\`"
+            fi
+          fi
+
+          # ---- record the round on the pull request either way. A relay that failed
+          # ---- silently is how this whole loop went unnoticed for five days.
+          if [ -n "$delivered" ]; then
+            gh pr edit "$PR" --repo "$GH_REPO" --add-label "relay:${round}" || true
+            gh pr comment "$PR" --repo "$GH_REPO" --body \
+              "Relayed the findings above to Jules via ${delivered} — round ${round} of ${MAX_ROUNDS}. Waiting for a push to \`${HEAD_REF}\`, which re-runs the review. Nothing merges until a round comes back \`VERDICT: CLEAN\`." || true
+          else
+            gh pr comment "$PR" --repo "$GH_REPO" --body \
+              "The review above asks for changes, but the findings could not be delivered to Jules session \`${session}\` (\`sendMessage\` returned HTTP ${code}, and starting a session on the branch also failed). This pull request is not merging and no agent has been told why — it needs a human. See the run log for the API response." || true
+            echo "::error::Could not deliver the review to session ${session}."
+          fi

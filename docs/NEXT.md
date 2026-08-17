@@ -3,7 +3,7 @@
 Read this before starting work. Rewrite it before finishing. It is the first file anyone opens,
 so it is the one that has to be true.
 
-**Updated:** 2026-08-13
+**Updated:** 2026-08-17
 
 ---
 
@@ -11,7 +11,10 @@ so it is the one that has to be true.
 
 v0.1 of the runtime is in the repository and the suite is green: **662 tests, 660 passing, 2
 skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
-red build.
+red build — and since 2026-08-17 nothing merges past a review that asked for changes either. Read
+§7 of `AGENTS.md` before you open a pull request: your work is not finished when the pull request
+is open, it is finished when a review comes back clean, and the findings reach you as a message in
+your own session.
 
 **Publishable, not production** — the two bars are defined in `docs/READINESS.md` and they do not
 imply each other. The README says the same thing and must keep saying it.
@@ -28,9 +31,32 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-All implementation items in the "our shortfall" category (including compromise #13) have been closed!
+**`test/readme-claims.test.js` "README Claim 4" is flaky under load.** It passes on its own, every
+time, and fails intermittently — roughly one run in four — when the whole suite runs at
+`--test-concurrency=2`. The failure is `readPackIndex: index file is too small (0 bytes)`: the peer
+process reads the pack index before it has been written, so it is a race in the fixture's
+handshake, not a defect in `runtime/git/pack-index.js`. CI has not hit it yet.
 
-The codebase now enforces strict architectural boundaries for UI field display derivation via the `## Displayed by` POLISM grammar section, all headline status claims and signed runtime release manifest verification in `README.md` and `docs/ARCHITECTURE.md` have been verified and unit tested in `test/readme-claims.test.js`, all refusal paths and authority checks in `runtime/polism/` have been verified and unit tested in `test/c-polism.test.js`, and documentation file path citations across `docs/COMPROMISES.md`, `docs/NEXT.md`, and `docs/AUDIT.md` are continuously verified by automated unit tests in `test/audit-location-citations.test.js`.
+Fix this first. It is the highest-value item in the queue and it is not about correctness — it is
+about whether this repository can run unattended at all. `test` is a required check, so a flake
+means a pull request fails for a reason no agent can reproduce or act on. Nothing merges, the next
+scheduled session opens a second pull request against the same files, and by the time anyone looks
+there are two conflicting branches and no explanation. This is the class of failure that stops the
+project silently, which is exactly what the review loop was built to prevent.
+
+Everything in the "our shortfall" category is closed except where `docs/COMPROMISES.md` is wrong
+about itself — see the note below. The codebase enforces UI field display derivation through the
+`## Displayed by` POLISM grammar section; the headline status claims and the signed release
+manifest verification in `README.md` and `docs/ARCHITECTURE.md` are verified in
+`test/readme-claims.test.js`; the refusal paths and authority checks in `runtime/polism/` are
+verified in `test/c-polism.test.js`; and the file paths cited across `docs/COMPROMISES.md`,
+`docs/NEXT.md` and `docs/AUDIT.md` are verified to exist by `test/audit-location-citations.test.js`.
+
+**One of those closures is not real.** Compromise #13 is marked CLOSED, but
+`runtime/ui/fields.js` still runs the hardcoded `['name', 'title', 'label', 'description']` loop
+and no file in `operating-model/information/` declares `## Displayed by` — so the replacement path
+is parsed and never populated. The grammar landed; the adoption did not. Filed as **#44**, and PR
+**#29** already contains the work and needs a rebase rather than a rewrite.
 
 ---
 

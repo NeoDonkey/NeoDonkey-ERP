@@ -1,8 +1,38 @@
 # Development journal
 
-Newest first. One entry per change, dated `YYYY-MM-DD`. A few lines each — what changed and why,
-not a restatement of the diff. `docs/NEXT.md` holds what happens next; this file holds what
-happened.
+**New entries go in `docs/journal/` as their own file** — `YYYY-MM-DD-short-slug.md`, one per
+change. Not in this file. See below for why.
+
+To read the log newest-first:
+
+```bash
+ls -r docs/journal/
+```
+
+This file is the archive of everything written before 2026-08-17, under the old convention. It is
+not appended to any more and it is not generated from anything; nothing needs to keep it in sync.
+
+## Why entries moved out of this file
+
+Because `AGENTS.md` §9 told every session to "add an entry at the top under today's date", and
+"at the top" means every session edited the same lines of the same file. Two sessions running in
+parallel therefore conflicted by construction — not occasionally, always — and nothing in this
+repository rebases, so a conflict is terminal.
+
+Measured on 2026-08-17 across the previous six Jules pull requests: five of six touched both this
+file and `docs/NEXT.md`. #28 and #29 both went `CONFLICTING` and sat unmergeable for two days. Then
+it happened to the pull request that fixed it: #47 merged in one minute while #43 was open, and
+because both touched these two files, #43 became conflicted — at which point GitHub stopped creating
+`pull_request` workflow runs for it entirely, since it cannot compute a merge commit for a
+conflicting pull request. A conflict does not merely block the merge; it makes the change
+unreviewable.
+
+Google Jules allows three concurrent sessions and fifteen a day. The quota was never the limit on
+this project's throughput. This file was.
+
+One file per entry means a session only ever creates a path no other session is writing, so parallel
+work cannot collide here. `docs/NEXT.md` is now rewritten only by a session that actually changed the
+plan, which most do not.
 
 ---
 
