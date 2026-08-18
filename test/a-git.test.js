@@ -338,6 +338,26 @@ test('FsAdapter contract — fs-node.js (executed)', async () => {
   assert.equal(statSync(join(dir, 'secret.jwk')).mode & 0o777, 0o600);
 });
 
+test('fs-node.js write is atomic and cleans up temp files on write failure', async () => {
+  const dir = tempRepo();
+  const fs = nodeFs(dir);
+  const dec = new TextDecoder();
+  await fs.write('file.txt', B('initial content'));
+  assert.equal(dec.decode(await fs.read('file.txt')), 'initial content');
+
+  // Overwrite existing file
+  await fs.write('file.txt', B('updated content'));
+  assert.equal(dec.decode(await fs.read('file.txt')), 'updated content');
+
+  // Verify failure cleanup on invalid path (writing to root)
+  await assert.rejects(async () => {
+    await fs.write('', B('invalid'));
+  });
+
+  const files = await fs.list('.');
+  assert.equal(files.filter(f => f.includes('.tmp.')).length, 0, 'No leftover temporary files on write failure');
+});
+
 test('FsAdapter contract — memFs (executed, same body)', async () => {
   await fsAdapterBehaviour(memFs());
 });

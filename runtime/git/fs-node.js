@@ -3,7 +3,7 @@
 // If you are adding a `node:` import anywhere else, you are breaking non-negotiable #2
 // of docs/CONTRACT.md: the same ES modules must load in a browser with no build step.
 
-import { readFile, writeFile, readdir, rm, mkdir, chmod } from 'node:fs/promises';
+import { readFile, writeFile, readdir, rm, mkdir, chmod, rename } from 'node:fs/promises';
 import { splitPath } from './fs.js';
 
 /** @typedef {import('./fs.js').FsAdapter} FsAdapter */
@@ -44,7 +44,14 @@ export function nodeFs(rootDir) {
       const target = resolve(path);
       if (target === rootDir) throw new Error('fs: cannot write the root');
       await mkdir(parentOf(path), { recursive: true });
-      await writeFile(target, data);
+      const tmp = `${target}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
+      try {
+        await writeFile(tmp, data);
+        await rename(tmp, target);
+      } catch (err) {
+        try { await rm(tmp, { force: true }); } catch {}
+        throw err;
+      }
     },
     async list(path) {
       try {

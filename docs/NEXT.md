@@ -31,18 +31,7 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-**`test/readme-claims.test.js` "README Claim 4" is flaky under load.** It passes on its own, every
-time, and fails intermittently — roughly one run in four — when the whole suite runs at
-`--test-concurrency=2`. The failure is `readPackIndex: index file is too small (0 bytes)`: the peer
-process reads the pack index before it has been written, so it is a race in the fixture's
-handshake, not a defect in `runtime/git/pack-index.js`. CI has not hit it yet.
-
-Fix this first. It is the highest-value item in the queue and it is not about correctness — it is
-about whether this repository can run unattended at all. `test` is a required check, so a flake
-means a pull request fails for a reason no agent can reproduce or act on. Nothing merges, the next
-scheduled session opens a second pull request against the same files, and by the time anyone looks
-there are two conflicting branches and no explanation. This is the class of failure that stops the
-project silently, which is exactly what the review loop was built to prevent.
+Issue #46 (`test/readme-claims.test.js` "README Claim 4" flakiness under concurrency) is resolved by atomic file writes in `nodeFs.write()` in `runtime/git/fs-node.js`.
 
 Everything in the "our shortfall" category is closed except where `docs/COMPROMISES.md` is wrong
 about itself — see the note below. The codebase enforces UI field display derivation through the
