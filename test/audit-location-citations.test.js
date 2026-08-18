@@ -326,7 +326,7 @@ test('Execution refusals and violations carry accurate file, line, and embedded 
 // ---------------------------------------------------------------------------- Documentation File Citations Test
 
 test('Documentation files cite existing codebase files', () => {
-  const docsToScan = ['docs/COMPROMISES.md', 'docs/NEXT.md', 'docs/AUDIT.md'];
+  const docsToScan = ['docs/COMPROMISES.md', 'docs/NEXT.md', 'docs/AUDIT.md', 'docs/GATE.md'];
   const pathRe = /\b(?:runtime|operating-model|templates|test|docs|demo|release|mcp)\/[a-zA-Z0-9_./-]+\.(?:js|mjs|json|md)\b/g;
 
   // Explicitly documented exit-path, hypothetical, or future files
