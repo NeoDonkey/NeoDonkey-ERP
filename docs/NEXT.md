@@ -73,6 +73,20 @@ Note also that `.gitignore` currently excludes `release.json`, because that name
 workspace artefact. Whoever eventually does arm the release will have to separate those two
 meanings first.
 
+**Wave 5 accounting work, as implementation** — opening balances, credit notes, a refund month,
+fixed assets, accruals, year-end close. `docs/READINESS.md` lists these and they are real. A first
+entry genuinely cannot be posted today, and that is the wall between this and a real company's
+first week.
+
+Do not *implement* these from recollection: each rests on a fact that has to be right — which
+opening-balance convention, which depreciation method, what the year-end close actually asserts —
+and a guess produces an ERP that is confidently wrong about money, which is the worst thing this
+product could be.
+
+But that is an argument for **looking it up**, not for stopping. These are facts with
+authoritative sources, not preferences awaiting an owner's taste. Research them, cite them,
+decide, and record the decision. Specifying and implementing them is wanted.
+
 ---
 
 ## Decide it yourself
@@ -94,3 +108,8 @@ name the other. A documented decision someone can overturn beats a question nobo
 yours to establish, *whether* Poland is in v1 is decided in the manifesto and the roadmap, and if it
 is in neither then that is a `needs-decision` issue and you stop. And the release signing key
 (#15 rr7), which is refused for a security reason rather than a preference.
+
+Changed 2026-08-17, twice. The file first said "leave it", so nothing moved and nobody even wrote
+the questions down. Then it said "ask", which would have produced a fortnight of unanswered issues.
+Neither was the owner's bottleneck to be — it is a research problem, and research is what these
+sessions are good at.
