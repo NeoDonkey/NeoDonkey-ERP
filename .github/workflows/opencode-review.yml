@@ -213,6 +213,13 @@ jobs:
                here that compounds, because the next session cannot see it and builds on top.
                Judge what the diff actually does, not what its description claims.
 
+            11. A decision record that duplicates one already in `docs/decisions/`, or one in
+               another open pull request. Two records on the same regulation are worse than one:
+               the next session cannot tell which is binding, and if they disagree the product
+               ends up implementing whichever was read last. Check `ls docs/decisions/` and the
+               open pull requests. Say which existing record covers it and refuse the duplicate,
+               unless the new one supersedes the old and says so explicitly.
+
             Then, briefly, real correctness bugs in the changed lines.
 
             WHERE TO HOLD THE BAR
@@ -525,6 +532,13 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+      # `issues: write` is not decoration. GitHub closes a linked issue on merge only if the
+      # token doing the merging could have closed it by hand. Without this, a pull request whose
+      # body says "Closes #55" merges, GitHub records the link, and the issue stays open in
+      # silence — no error, nothing in the log. On 2026-08-18 #64 and #68 both merged with the
+      # keyword present and #55 and #57 were still open the next morning, which is how completed
+      # work gets picked up and built a second time by the next session.
+      issues: write
     steps:
       # Deliberately no checkout. Nothing here reads the branch.
       - name: Queue the merge
