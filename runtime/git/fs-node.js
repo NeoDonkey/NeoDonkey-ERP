@@ -3,7 +3,7 @@
 // If you are adding a `node:` import anywhere else, you are breaking non-negotiable #2
 // of docs/CONTRACT.md: the same ES modules must load in a browser with no build step.
 
-import { readFile, writeFile, readdir, rm, mkdir, chmod } from 'node:fs/promises';
+import { readFile, writeFile, readdir, rm, mkdir, chmod, rename } from 'node:fs/promises';
 import { splitPath } from './fs.js';
 
 /** @typedef {import('./fs.js').FsAdapter} FsAdapter */
@@ -12,9 +12,10 @@ const isMissing = (err) => err && (err.code === 'ENOENT' || err.code === 'ENOTDI
 
 /**
  * @param {string} rootDir absolute or process-relative directory; created on demand
+ * @param {{ rng?: () => number }} [opts] optional options including injectable rng
  * @returns {FsAdapter}
  */
-export function nodeFs(rootDir) {
+export function nodeFs(rootDir, opts = {}) {
   if (typeof rootDir !== 'string' || rootDir === '') {
     throw new Error('nodeFs: rootDir must be a non-empty string');
   }
@@ -44,7 +45,18 @@ export function nodeFs(rootDir) {
       const target = resolve(path);
       if (target === rootDir) throw new Error('fs: cannot write the root');
       await mkdir(parentOf(path), { recursive: true });
-      await writeFile(target, data);
+      let seq = 0;
+      const randStr = opts.rng
+        ? String(Math.floor(opts.rng() * 1e9))
+        : `${process.hrtime.bigint()}.${++seq}`;
+      const tmp = `${target}.tmp.${process.pid}.${randStr}`;
+      try {
+        await writeFile(tmp, data);
+        await rename(tmp, target);
+      } catch (err) {
+        try { await rm(tmp, { force: true }); } catch {}
+        throw err;
+      }
     },
     async list(path) {
       try {
