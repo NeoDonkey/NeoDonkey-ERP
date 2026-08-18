@@ -12,9 +12,10 @@ const isMissing = (err) => err && (err.code === 'ENOENT' || err.code === 'ENOTDI
 
 /**
  * @param {string} rootDir absolute or process-relative directory; created on demand
+ * @param {{ rng?: () => number }} [opts] optional options including injectable rng
  * @returns {FsAdapter}
  */
-export function nodeFs(rootDir) {
+export function nodeFs(rootDir, opts = {}) {
   if (typeof rootDir !== 'string' || rootDir === '') {
     throw new Error('nodeFs: rootDir must be a non-empty string');
   }
@@ -44,7 +45,11 @@ export function nodeFs(rootDir) {
       const target = resolve(path);
       if (target === rootDir) throw new Error('fs: cannot write the root');
       await mkdir(parentOf(path), { recursive: true });
-      const tmp = `${target}.tmp.${process.pid}.${Math.random().toString(36).slice(2)}`;
+      let seq = 0;
+      const randStr = opts.rng
+        ? String(Math.floor(opts.rng() * 1e9))
+        : `${process.hrtime.bigint()}.${++seq}`;
+      const tmp = `${target}.tmp.${process.pid}.${randStr}`;
       try {
         await writeFile(tmp, data);
         await rename(tmp, target);

@@ -339,11 +339,14 @@ test('FsAdapter contract — fs-node.js (executed)', async () => {
 });
 
 test('fs-node.js write is atomic and cleans up temp files on write failure', async () => {
+  let rngCalled = false;
+  const rng = () => { rngCalled = true; return 0.123456789; };
   const dir = tempRepo();
-  const fs = nodeFs(dir);
+  const fs = nodeFs(dir, { rng });
   const dec = new TextDecoder();
   await fs.write('file.txt', B('initial content'));
   assert.equal(dec.decode(await fs.read('file.txt')), 'initial content');
+  assert.equal(rngCalled, true, 'Injected rng was called for temp file generation');
 
   // Overwrite existing file
   await fs.write('file.txt', B('updated content'));
