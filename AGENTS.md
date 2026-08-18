@@ -117,21 +117,13 @@ which job you took and why.
 
 ### If you implement (engineer)
 
-1. List open issues labelled `ready`. Ignore `needs-decision`, `blocked` and `meta` entirely.
-   (`meta` is a generated report — see the daily *State of the project* issue. It is not work,
-   and anything written into it is overwritten the next morning.)
-2. List open pull requests and note which issue numbers they reference. **An issue already
-   referenced by an open pull request is taken.** Skip it.
-3. Take the highest-priority remaining one — `p1` before `p2` before `p3`. Where several are
-   equal, prefer one whose `area:` label differs from the areas the open pull requests touch, so
-   two changes are less likely to meet in the same file.
-4. **Open a draft pull request immediately, before doing the work**, with `Closes #N` in the body.
-   That is how you claim the issue: the next session sees it and moves on. A branch with no pull
-   request claims nothing.
-5. Do the work. Mark the pull request ready for review when the suite is green.
-
-If there is no `ready` issue, do not invent one. Improve test coverage, or correct documentation
-that has drifted from the code, and say in the pull request that the queue was empty.
+1. Read `docs/GATE.md` to see the current status of all ten v1.0 gate conditions.
+2. Find the gate condition closest to green — fewest missing pieces, not lowest number.
+3. List open issues labelled `ready` (ignoring `needs-decision`, `blocked` and `meta`). Skip any issue already referenced by an open pull request.
+4. Take the `ready` issue that closes part of the nearest gate condition (`p1` before `p2` before `p3`). Where several candidates serve the same condition, prefer one whose `area:` label differs from areas open pull requests touch.
+5. If no `ready` issue serves the condition nearest to green, specify one from `docs/ROADMAP-V1.md` Part 2 for it, per `docs/SPECIFYING.md`.
+6. **Open a draft pull request immediately, before doing the work**, with `Closes #N` in the body and stating **which gate condition it moves and how far**. That is how you claim the issue: the next session sees it and moves on.
+7. Do the work. Mark the pull request ready for review when the suite is green.
 
 ### If you specify (planning)
 
