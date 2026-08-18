@@ -37,10 +37,12 @@ decision and why.
 >    but there is no `release.json` and no published fingerprint — deliberately, because shipping a
 >    development key would train people to pin a throwaway. Until a real key exists *and its
 >    fingerprint is published somewhere that is not the origin*, the origin is trusted in practice.
-> 2. **Encryption is proven at the layer, not yet through the front door** (#5). Group keys, DEKs
->    and GDPR erasure by cryptographic shredding all work and are tested against real `git fsck` —
->    but `kernel.open()` cannot yet be handed an encryption key, so a company using the ordinary API
->    cannot reach them. **Until that lands: no HR data and no customer PII.**
+> 2. **Encryption is reachable through the kernel, but not through the browser UI** (#5). Group
+>    keys, DEKs and GDPR erasure by cryptographic shredding all work, are tested against real
+>    `git fsck`, and a program calling `kernel.open({ encryption, vault, sealed })` can use them —
+>    but the browser UI, the MCP server and the demo do not pass an encryption key, and a browser
+>    peer has nowhere to keep one. **Until that lands: no HR data and no customer PII through the
+>    browser.**
 > 3. **A first entry cannot be posted.** There are no opening balances, no supplier credit notes, no
 >    refund month, no fixed assets or depreciation, no accruals. That is bookkeeping work, not
 >    architecture, and it is what stands between this and a real company's first week.
@@ -164,8 +166,9 @@ moves to ARM, if a Linux distribution tightens its policies — none of it reach
 
 Read [docs/COMPROMISES.md](docs/COMPROMISES.md). It is not an appendix, it is a commitment.
 
-Briefly: encryption exists and is proven but is not reachable from `kernel.open()` yet, so **no HR
-data and no customer PII**; a company's opening balance cannot be posted; no browser has run the
+Briefly: encryption is proven and reachable through the kernel, but the browser UI, the MCP server
+and the demo do not pass an encryption key, so **no HR data and no customer PII through the
+browser**; a company's opening balance cannot be posted; no browser has run the
 WebRTC path and nothing renders the peer-introduction QR code; no DATEV export and no dialects; and
 the runtime is JavaScript rather than WebAssembly — a decision, recorded as FD-8, not an omission.
 Each entry names the principle it bends, why, what is lost, who owns it, and the exit path.
