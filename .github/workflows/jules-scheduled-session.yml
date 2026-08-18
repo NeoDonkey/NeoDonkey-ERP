@@ -194,10 +194,15 @@ jobs:
 
           IF YOU IMPLEMENT
 
-          Take the highest-priority unclaimed `ready` issue — p1 before p2 before p3 — preferring
-          one whose `area:` label differs from the areas the open pull requests touch. Open a draft
-          pull request with "Closes #N" in the body BEFORE you start; that is how you claim it.
-          Implement with unit tests, verify with `npm test`, then mark it ready for review.
+          Read docs/GATE.md first to see the scorecard of all ten v1.0 gate conditions. Find the condition
+          closest to green — fewest missing pieces, not lowest number. Take the unclaimed `ready` issue
+          that closes part of that condition (p1 before p2 before p3), preferring one whose `area:` label
+          differs from the areas open pull requests touch. If no issue serves that condition, specify one
+          from ROADMAP-V1 Part 2 for it, per docs/SPECIFYING.md.
+
+          Open a draft pull request with "Closes #N" in the body BEFORE you start, stating which gate
+          condition it moves and how far; that is how you claim it. Implement with unit tests, verify with
+          `npm test`, then mark it ready for review.
 
           A new test must fail before your change and pass after it. If it passes both ways it
           proves nothing. Never weaken, skip or delete an existing test to get the suite green.
