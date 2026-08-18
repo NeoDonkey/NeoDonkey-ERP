@@ -214,6 +214,27 @@ jobs:
           them is real work — arguably the most valuable work available, because an empty queue
           stops every other session too.
 
+          CLAIM THE TOPIC FIRST — specifying collides more easily than implementing
+
+          Implementing is claimed by a draft pull request that says "Closes #N". Specifying had
+          no claim at all, and on 2026-08-18 three sessions ran at once and specified the same
+          things: DATEV EXTF in two pull requests, EN-16931 in two, period close in two, and OSS
+          in a third that had already merged. Two decision records about German VAT that disagree
+          are worse than one, because the next session cannot tell which is binding.
+
+          So, before writing anything:
+
+            gh pr list --state open --json number,title,files \
+              --jq '.[] | "\(.number) \(.title) \([.files[].path] | map(select(startswith("docs/decisions/"))) | join(" "))"'
+            ls docs/decisions/
+
+          Pick a roadmap line nobody has in flight and nobody has already recorded. Then open a
+          DRAFT pull request immediately, titled with the topics you are taking — "specify: DATEV
+          EXTF export" — before you research anything. That draft is the claim, exactly as it is
+          for implementing.
+
+          If everything you would have taken is claimed, say so and implement instead.
+
           Decompose; do not invent. Every issue cites its source and quotes the sentence it came
           from, states how it will be verified — the test that fails without it, or the command
           that demonstrates it — and carries an `area:` label and a priority. Label it `ready`
