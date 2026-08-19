@@ -3,7 +3,7 @@
 Read this before starting work. Rewrite it before finishing. It is the first file anyone opens,
 so it is the one that has to be true.
 
-**Updated:** 2026-08-18
+**Updated:** 2026-08-19
 
 ---
 
@@ -49,14 +49,20 @@ is parsed and never populated. The grammar landed; the adoption did not. Filed a
 
 ---
 
-## Newly Specified Standards & Next Priorities
+## Newly Specified Standards & Unblocked Implementable Issues
 
-Decision records have been added to specify key roadmap items for Wave 2 and Wave 3:
-1. **DATEV EXTF Format Export (`docs/decisions/2026-08-18-datev-extf-export-structure-and-booking-header-format.md`)**: Formatversion 700 header specification, Windows-1252 encoding, SKR03/SKR04 account mapping, and booking line syntax.
-2. **EN 16931 / XRechnung E-Invoicing (`docs/decisions/2026-08-18-en16931-xrechnung-e-invoicing-semantic-data-model.md`)**: Semantic business terms (BT-1 to BT-115), German XRechnung KoSIT 3.0 profile, UBL 2.1 syntax binding, and UStG § 14 mandatory B2B rollout schedule.
-3. **GoBD Period Close & Balance Carryforward (`docs/decisions/2026-08-18-gobd-period-close-and-balance-carryforward.md`)**: GoBD period locking (Festschreibung), immutability of posted journal entries, reversing entry mechanisms (Storno), P&L closing into GuV/Equity, and balance sheet opening carryforward (Saldenvortrag).
+Decision records in `docs/decisions/` have been updated with concrete, `ready` implementable issue definitions for Wave 2 and Wave 3:
+1. **DATEV EXTF Format Export (`docs/decisions/2026-08-18-datev-extf-export-structure-and-booking-header-format.md`)**:
+   - `feat(datev): serialize EXTF v700 header and column metadata lines` (`area:runtime`, `p1`, `ready`)
+   - `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries` (`area:runtime`, `p1`, `ready`)
+2. **EN 16931 / XRechnung E-Invoicing (`docs/decisions/2026-08-18-en16931-xrechnung-e-invoicing-semantic-data-model.md`)**:
+   - `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects` (`area:runtime`, `p1`, `ready`)
+   - `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms` (`area:runtime`, `p1`, `ready`)
+3. **GoBD Period Close & Balance Carryforward (`docs/decisions/2026-08-18-gobd-period-close-and-balance-carryforward.md`)**:
+   - `feat(ledger): enforce GoBD period locking (Festschreibung) and posting immutability in kernel` (`area:runtime`, `p1`, `ready`)
+   - `feat(ledger): generate year-end P&L closing and balance carryforward (Saldenvortrag) entries` (`area:runtime`, `p1`, `ready`)
 
-Future sessions can implement these specifications by building unit-tested exporters and period-close kernel validation rules.
+Engineering sessions can immediately take any of these unclaimed `ready` issues to build unit-tested implementations and move Gate Condition 6 ("It speaks to the outside world") to green.
 
 ---
 

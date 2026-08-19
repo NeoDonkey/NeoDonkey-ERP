@@ -34,3 +34,28 @@ How should NeoDonkey model semantic electronic invoices per the European Standar
 
 ## Verification Method
 - **Unit Test Verification:** `test/xrechnung-xml-schema.test.js` generates an XRechnung UBL 2.1 XML document from an invoice object and asserts structural validation, mandatory Business Term presence (BT-1 through BT-115), and exact decimal arithmetic representation against the KoSIT semantic rule set.
+
+## Unblocked Implementable Issues
+
+### Issue 1: `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects`
+- **Title:** Generate EN 16931 / XRechnung v3.0 UBL 2.1 XML e-invoices from invoice entity objects
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "XRechnung/EN-16931 invoices") and Part 3 (Wave 3: XRechnung e-invoicing)
+- **Primary Source Citation:** EN 16931-1:2017 §6.1 & KoSIT XRechnung Specification v3.0.1 §3
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
+- **Labels:** `ready`, `area:runtime`, `p1`
+- **Verification Method:** Unit test in `test/xrechnung-generator.test.js` passes a domain invoice object (seller/buyer VAT IDs, lines, amounts, currency) to `generateXRechnungUblXml(invoice)` and asserts:
+  1. Root element is `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">`.
+  2. CustomizationID contains `urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0`.
+  3. Mandatory business terms BT-1 through BT-115 are present in specified XML tags.
+  4. All currency amounts match exact integer `BigInt` minor units rendered as `0.00` formatted strings without floating point arithmetic.
+
+### Issue 2: `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms`
+- **Title:** Parse and validate inbound EN 16931 UBL 2.1 e-invoices into domain invoice structures
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "one inbound dialect") and Part 3 (Wave 3: one inbound dialect)
+- **Primary Source Citation:** EN 16931-1:2017 §6.2 & KoSIT XRechnung Specification v3.0.1 §4
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
+- **Labels:** `ready`, `area:runtime`, `p1`
+- **Verification Method:** Unit test in `test/xrechnung-parser.test.js` parses valid and invalid UBL 2.1 XML strings using `parseXRechnungUblXml(xml)` and asserts:
+  1. Valid XML returns a structured domain invoice object with correct string values and `BigInt` minor unit monetary fields.
+  2. Missing mandatory BT terms (e.g. BT-1 Invoice Number or BT-31 Seller VAT Identifier) throw explicit `ValidationError` identifying the missing term ID.
+  3. Mismatched document totals (`BT-112 != BT-109 + BT-110`) are rejected with an explicit arithmetic error.
