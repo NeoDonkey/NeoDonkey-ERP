@@ -44,12 +44,12 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**22 open entries. 12 closed.** Counted 2026-08-13 (#13 closed by Daniel Pammé).
+**23 open entries. 12 closed.** Counted 2026-08-19.
 
 | Category | Open | Entries |
 |---|---|---|
 | **our shortfall** | **0** (+1 named residual risk) | #15 residual risk 7 |
-| real work | 12 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20 |
+| real work | 13 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20, #25 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
 | **closed** | **12** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4, #21, #13 (Part 2) |
@@ -1213,6 +1213,16 @@ hands documents to the UI without going through `perform()` at all — so refusi
 would be theatre while the document stayed readable. **Exit path:** visibility filtering in
 `runtime/read/`, at which point the same coverage check extends to `read` with no change to its
 shape.
+
+## #25 — Autonomous sessions lack GitHub API credentials to file GitHub issues directly
+
+**Category: real work.**
+
+**Principle in tension:** AGENTS.md §5 & §12 (every decision record must file at least one `ready` GitHub issue that builds it, and an implementation session claims work by `Closes #N`).
+
+**Where it bites:** Autonomous agent sessions running without GitHub API write permissions (e.g. `GITHUB_TOKEN` with issue-creation scopes) can research, write decision records, and craft complete issue specifications, but cannot invoke `gh issue create` or POST to the GitHub REST API to file open issues. Decision records written during such sessions contain complete issue specifications (title, primary source, constraints, labels, verification method), but the corresponding GitHub issues do not exist in the repo's open issue queue until filed by a human maintainer or a session with issue-creation credentials.
+
+**Exit path:** A human maintainer or a workflow with issue-creation write credentials files the specified issues from the decision record into GitHub, unblocking subsequent implementation sessions to claim them with `Closes #N`.
 
 ---
 ---

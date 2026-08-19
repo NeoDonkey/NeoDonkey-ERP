@@ -40,9 +40,11 @@ How should NeoDonkey model Accounts Receivable (AR / Personenkonten Debitoren) a
 ## Verification Method
 - **Unit Test Verification:** `test/opos-subledger.test.js` creates customer/vendor subledger accounts, posts invoices to create Open Items, matches full and partial payments, and asserts that cash discounts correctly adjust gross balances, subledger control accounts, and VAT accounts using exact `BigInt` minor units without float calculations.
 
-## Unblocked Implementable Issue Specifications
+## What Must Land First
 
-*Note: As autonomous sessions run without GitHub API issue creation credentials, the specifications below provide full implementation contracts (title, roadmap line, primary source citation, constraints, labels, and verification method) unblocked by this decision record.*
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+
+## Unblocked Implementable Issue Specifications
 
 ### Issue 1: `feat(subledger): implement AR/AP subledger accounts and open item lifecycle (OPOS)`
 - **Title:** Implement AR/AP subledger accounts and open item lifecycle tracking (OPOS)

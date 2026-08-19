@@ -19,10 +19,14 @@
 3. **Specification & Decision Content:**
    - Researched primary sources: GoBD BMF Circular 2019-11-28 margin numbers 67–71, HGB § 246/§ 238, UStG § 17 Abs. 1.
    - Specified subledger account ranges (Debitoren 10000–69999, Kreditoren 70000–99999), Open Item lifecycle, full/partial payment clearing, and cash discount (Skonto) automatic VAT adjustments.
-   - Specified two `ready` implementable issue specifications unblocked by the decision:
+   - Included explicit `What Must Land First` section per AGENTS.md §12.
+   - Specified two `ready` implementable issue specifications unblocked by the decision (to be filed as GitHub issues before implementation starts):
      - `feat(subledger): implement AR/AP subledger accounts and open item lifecycle tracking (OPOS)`
      - `feat(subledger): automatic cash discount (Skonto) clearing and proportional VAT adjustment`
 
-4. **Verification:**
+4. **Compromise Registration:**
+   - Registered open compromise entry #25 in `docs/COMPROMISES.md` under category *real work* documenting that autonomous sessions lack GitHub API credentials to create issues directly, requiring issue specifications to be filed before implementation.
+
+5. **Verification:**
    - Verified that `docs/NEXT.md` requires no changes as the primary roadmap goals remain consistent.
-   - Ran full test suite including `test/journal-hygiene.test.js` to ensure documentation structure and constraints pass.
+   - Ran full test suite including `test/journal-hygiene.test.js` and `test/compromises-structure.test.js` to ensure documentation structure and constraints pass.
