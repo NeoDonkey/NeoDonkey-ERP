@@ -20,7 +20,6 @@ import { join } from 'node:path';
 import {
   gitPeer, reachable, isAncestor, haveList, GIT_SYNC_VERSION, MAIN_REF, PEER_REF_PREFIX, CHUNK_BYTES,
 } from '../runtime/sync/gitsync.js';
-import { b64encode } from '../runtime/identity/ed25519.js';
 import { SyncError } from '../runtime/sync/sealed.js';
 import { nodeFs } from '../runtime/git/fs-node.js';
 import { initRepo, repo } from '../runtime/git/repo.js';
@@ -454,35 +453,4 @@ test('gitPeer refuses to be constructed without the two things it cannot work wi
   assert.throws(() => gitPeer({ link: wire.a }), SyncError);
   assert.throws(() => gitPeer({ repo: {} }), SyncError);
   assert.throws(() => gitPeer(null), SyncError);
-});
-
-test('a pack or index below minimum size is refused in done frame handler with SyncError', async () => {
-  const klein = await makeRepo('minsize');
-  const wire = pipePair();
-  /** @type {Error[]} */
-  const errors = [];
-  gitPeer({ link: wire.a, repo: klein.r, fs: klein.fs, onError: (e) => errors.push(e) });
-
-  // 1. Pack below 32 bytes
-  const b64_10 = b64encode(new Uint8Array(10));
-  wire.b.send(JSON.stringify({ t: 'pack!', n: 1, objects: 1, packBytes: 10, idxBytes: 1072 }));
-  wire.b.send(JSON.stringify({ t: 'chunk', n: 1, part: 'pack', b64: b64_10 }));
-  wire.b.send(JSON.stringify({ t: 'chunk', n: 1, part: 'idx', b64: b64encode(new Uint8Array(1072)) }));
-  wire.b.send(JSON.stringify({ t: 'done', n: 1 }));
-
-  await new Promise((r) => setTimeout(r, 20));
-  assert.equal(errors.length, 1);
-  assert.ok(errors[0] instanceof SyncError);
-  assert.match(errors[0].message, /below the minimum pack size/);
-
-  // 2. Index below 1072 bytes
-  wire.b.send(JSON.stringify({ t: 'pack!', n: 2, objects: 1, packBytes: 32, idxBytes: 10 }));
-  wire.b.send(JSON.stringify({ t: 'chunk', n: 2, part: 'pack', b64: b64encode(new Uint8Array(32)) }));
-  wire.b.send(JSON.stringify({ t: 'chunk', n: 2, part: 'idx', b64: b64_10 }));
-  wire.b.send(JSON.stringify({ t: 'done', n: 2 }));
-
-  await new Promise((r) => setTimeout(r, 20));
-  assert.equal(errors.length, 2);
-  assert.ok(errors[1] instanceof SyncError);
-  assert.match(errors[1].message, /below the minimum index size/);
 });

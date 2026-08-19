@@ -1408,35 +1408,6 @@ claiming un-enforceability have been entirely removed:
 
 **How that was verified — 2026-08-12, by running it:** Handled by running the entire test suite `npm test` (all 641 tests green, 639 passing, 2 skipped, 0 failures), proving that the files parse perfectly, compile, and execute correct branched logic under `evaluate()`.
 
-## #24 — A known-flaky test is quarantined out of the blocking check
-
-**Category: our shortfall.** `test/known-flaky.txt` names tests whose failure CI will forgive.
-Today it names one: the relay sync test behind #46, which fails roughly one run in eight under
-load with three faces — a 0-byte pack index, "no convergence within 20000 ms", and "peer timeout".
-
-**Why it was taken.** `test` is a required check and nobody watches this repository for days at a
-time. A test that fails intermittently for a reason no agent can reproduce does not raise the
-quality bar; it sets throughput to zero at random and leaves correct work parked. #29 was blocked
-by exactly that on 2026-08-17: correct work, clean review, red build, and a duplicate issue nearly
-filed to redo it. `merge-sweeper` retries a failed build once, which turns one-in-eight into
-one-in-sixty-four and was still not enough.
-
-**What it costs.** A real regression in `test/readme-claims.test.js` "README Claim 4" or
-`test/sync-relay.test.js` would now pass CI. That is a genuine hole and it is why this is an entry
-here rather than a comment in a YAML file. It is bounded: the quarantine forgives only the named
-patterns, a known flake failing *alongside* anything else still fails the build, and a non-zero
-exit with no `not ok` line — a crash, a hang, a lost runner — fails loudly.
-
-**The exit path.** #46. The relay forwards only to peers currently in its mailbox and holds
-nothing, which is deliberate and documented; the sync layer above assumes delivery and has no
-catch-up on reconnect. The fix is catch-up on reconnect in `runtime/sync/` — git already computes
-what is missing between two heads. When #46 closes, the two lines come out of
-`test/known-flaky.txt` and this entry closes with it.
-
-**Bounded by tests, not intentions.** `test/known-flaky.test.js` holds the list to three entries,
-requires it to cite an open issue and this register, and rejects a pattern short enough to forgive
-unrelated failures.
-
 ## #15 rr4 — Residual risk 4: unsigned development builds are runnable, and the UI does not say so — CLOSED
 
 **Was: category "our shortfall".** With no pin and no `release.json`, `gateRelease()` returns `'unsigned'` rather than refusing. It means "unsigned" must be visible in the UI.

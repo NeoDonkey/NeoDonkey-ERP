@@ -282,17 +282,12 @@ export function gitPeer(o) {
         // non-empty pack is the sender being wrong, and ingesting it would produce that same
         // "index file is too small (0 bytes)" from readPackIndex, with the announcement and the
         // arrival agreeing perfectly on a nonsense value.
-        if (pack.length > 0) {
-          if (pack.length < 32) {
-            throw new SyncError(
-              `git sync: the peer sent a pack of ${pack.length} bytes, which is below the minimum pack size (32 bytes).`
-            );
-          }
-          if (idx.length < 1072) {
-            throw new SyncError(
-              `git sync: the peer sent a pack index of ${idx.length} bytes, which is below the minimum index size (1072 bytes).`
-            );
-          }
+        if (pack.length > 0 && idx.length === 0) {
+          throw new SyncError(
+            'git sync: the peer sent a pack of ' + pack.length + ' bytes with no index at all. '
+            + 'Its `pack!` header announced ' + JSON.stringify(buf.header.idxBytes) + ' index '
+            + 'bytes, so the fault is on the sending side, not in transit; nothing has been '
+            + 'ingested.');
         }
 
         settle(msg.n, 'pack', { empty: false, header: buf.header, pack, idx });

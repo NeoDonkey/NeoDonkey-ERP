@@ -234,28 +234,6 @@ jobs:
               continue
             fi
 
-            # ---- 1c. a refusal with a standing approval behind it -------------------------
-            #
-            # Belt and braces for the hole that let #71 merge on 2026-08-18. `review` withdraws
-            # auto-merge on every push, but that job and `test` run in parallel, so a very fast
-            # suite could still merge on a stale approval before the withdrawal lands. Nothing
-            # carrying a refusal should ever have auto-merge queued behind it, whatever the
-            # ordering, so this sweep clears it every twenty minutes as well.
-            case " $labels " in
-              *' review:changes-requested '*)
-                if [ "$automerge" = "true" ]; then
-                  echo "#${n}: refused but auto-merge is queued — withdrawing it"
-                  if gh pr merge "$n" --repo "$GH_REPO" --disable-auto >/dev/null 2>&1; then
-                    gh pr comment "$n" --repo "$GH_REPO" --body                       "Withdrew a standing auto-merge. This pull request carries \`review:changes-requested\`, and an approval left over from an earlier round would have merged it on \`test\` alone — which is how #71 merged with refused findings on 2026-08-18. Push a fix; a clean verdict on that commit re-queues it." || true
-                    acted=$((acted + 1))
-                  else
-                    echo "::error::#${n} is refused and has auto-merge queued, and it could not be withdrawn. It may merge unreviewed."
-                    failed=$((failed + 1))
-                  fi
-                fi
-                ;;
-            esac
-
             # ---- 2. refused, and nothing came back ----------------------------------------
             # `review:changes-requested` is set by `review` whenever a verdict refuses the
             # pull request, whether or not the findings could be delivered to an agent. While

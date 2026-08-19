@@ -49,10 +49,3 @@ npm-debug.log*
 .vscode/
 *.sw?
 .eslintcache
-
-# Marketing, positioning and launch material live in their own repository, not here.
-# This one is public and is the product: an ERP whose claims are meant to be verifiable by
-# running something. Launch copy in the same tree invites a reader to treat the two as one
-# kind of statement, and invites an agent to "improve" a landing page while believing it is
-# working on the product. Removed 2026-08-19; see docs/journal/2026-08-19-marketing-belongs-elsewhere.md.
-marketing/

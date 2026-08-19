@@ -83,7 +83,6 @@ export const EXCLUDED_TREES = {
   release: 'the release tooling is not part of the release',
   'operating-model': 'the company, not the runtime — data, versioned in the repo it belongs to',
   templates: 'content, not runtime',
-  marketing: 'marketing materials',
   'demo-workspace': 'generated workspace',
   keys: 'private key material must never be hashed into a public manifest',
 };

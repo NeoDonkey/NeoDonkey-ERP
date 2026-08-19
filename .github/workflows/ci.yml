@@ -73,14 +73,10 @@ jobs:
         #
         # `tee` keeps the summary for the next step. `pipefail` is what makes the pipe still
         # fail the build when a test fails — without it the exit status would be `tee`'s.
-        id: suite
         shell: bash
         run: |
-          # Not `set -o pipefail` + fail here. The next step decides, because a failure whose
-          # only casualty is a known flake must not stop the queue — see test/known-flaky.txt.
-          set +e +o pipefail
-          node --test --test-concurrency=2 "test/*.test.js" 2>&1 | tee "${RUNNER_TEMP}/suite.txt"
-          echo "rc=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+          set -o pipefail
+          node --test --test-concurrency=2 "test/*.test.js" | tee "${RUNNER_TEMP}/suite.txt"
 
       # The demo is the product, and until now nothing ran it.
       #
@@ -97,54 +93,16 @@ jobs:
       - name: The MVP acceptance demo still runs
         run: node demo/sarah.mjs
 
-      # A red build for a reason no agent can reproduce is the single most effective way to
-      # stop this repository, because `test` is required and nothing here presses re-run. #29
-      # was blocked by exactly that on 2026-08-17: correct work, green review, failed on the
-      # #46 relay flake.
-      #
-      # So: if every failing test is named in test/known-flaky.txt, warn and continue. If
-      # anything else failed — including a known-flaky test failing *alongside* something real
-      # — fail. The quarantine can only ever forgive the listed names, never a whole run.
-      - name: Decide whether the failures were only the known flakes
-        if: always() && steps.suite.outputs.rc != '0'
-        shell: bash
-        run: |
-          set -uo pipefail
-          failing=$(grep -E '^not ok [0-9]+ - ' "${RUNNER_TEMP}/suite.txt" \
-                    | sed -E 's/^not ok [0-9]+ - //' | sed -E 's/[[:space:]]*#.*$//' || true)
-
-          if [ -z "$failing" ]; then
-            echo "::error::The suite exited ${{ steps.suite.outputs.rc }} but no test reported 'not ok'."
-            echo "That is a crash, a timeout or a runner failure, not a test failure — read the log above."
-            exit 1
-          fi
-
-          allow=$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' test/known-flaky.txt || true)
-          unexpected=""
-          while IFS= read -r t; do
-            [ -z "$t" ] && continue
-            ok=0
-            while IFS= read -r pat; do
-              [ -z "$pat" ] && continue
-              case "$t" in *"$pat"*) ok=1; break ;; esac
-            done <<< "$allow"
-            [ "$ok" = "0" ] && unexpected="${unexpected}  ${t}"$'\n'
-          done <<< "$failing"
-
-          if [ -n "$unexpected" ]; then
-            echo "::error::The suite failed, and not only on known flakes."
-            printf 'Failures not covered by test/known-flaky.txt:\n%s\n' "$unexpected"
-            exit 1
-          fi
-
-          echo "::warning::The suite failed, but every failing test is a known flake (test/known-flaky.txt):"
-          printf '%s\n' "$failing"
-          echo "Continuing. This is a recorded compromise — see docs/COMPROMISES.md and #46."
-
-      - name: The suite size meets or exceeds the floor in test/suite-floor.txt
-        # Compares the run against the floor in test/suite-floor.txt (Issue #55).
-        # Adding tests no longer requires changing documentation, preventing PR conflicts.
-        # Removing tests below the floor fails loudly.
+      - name: The documented suite size matches the suite
+        # The other half of test/documented-counts.test.js. That test proves the documents
+        # agree with each other; only this step can prove they agree with reality, because a
+        # test cannot count the run it is part of.
+        #
+        # This is the check that was missing for five days while README.md said 641, docs/NEXT.md
+        # said 658, and the suite ran 661. The audit lane found it eleven times and could not
+        # land the fix; nothing automated ever compared the two numbers.
+        #
+        # Adding a test fails this step until the documents are corrected. That is intended.
         shell: bash
         run: |
           set -euo pipefail
@@ -159,16 +117,18 @@ jobs:
             exit 1
           fi
 
-          floor_file="test/suite-floor.txt"
-          if [ ! -f "$floor_file" ]; then
-            echo "Floor file $floor_file missing!"
-            exit 1
-          fi
-          floor=$(tr -d '[:space:]' < "$floor_file")
+          documented=$(grep -oE '[0-9]{3,5} tests' README.md | head -1 | grep -oE '^[0-9]+')
 
-          if [ "$ran" -lt "$floor" ]; then
-            echo "The suite ran ${ran} tests, which is below the floor of ${floor} set in ${floor_file}."
-            echo "If tests were intentionally removed, update ${floor_file}."
+          if [ "$ran" != "$documented" ]; then
+            echo "The suite ran ${ran} tests. The documents claim ${documented}."
+            echo
+            echo "Update every one of these to ${ran}, then push again:"
+            grep -nE '[0-9]{3,5} tests' README.md AGENTS.md docs/NEXT.md docs/AUDIT.md \
+              .github/pull_request_template.md .github/workflows/opencode-audit.yml || true
+            echo
+            echo "docs/NEXT.md also states the passing and skipped split; keep it consistent."
+            echo "Do NOT edit docs/JOURNAL.md or docs/COMPROMISES.md to match: their numbers are"
+            echo "dated observations, and rewriting them destroys the evidence they carry."
             exit 1
           fi
-          echo "suite ran ${ran} tests, meeting or exceeding floor (${floor} from ${floor_file})"
+          echo "documented suite size (${documented}) matches the suite as run"

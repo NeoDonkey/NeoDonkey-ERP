@@ -3,14 +3,14 @@
 Read this before starting work. Rewrite it before finishing. It is the first file anyone opens,
 so it is the one that has to be true.
 
-**Updated:** 2026-08-18
+**Updated:** 2026-08-17
 
 ---
 
 ## Where the project stands
 
-v0.1 of the runtime is in the repository and the suite is green: **about 30 seconds, 2
-skipped, no failures.** `npm test` is a required check, so nothing merges past a
+v0.1 of the runtime is in the repository and the suite is green: **666 tests, 664 passing, 2
+skipped, no failures, about 30 seconds.** `npm test` is a required check, so nothing merges past a
 red build — and since 2026-08-17 nothing merges past a review that asked for changes either. Read
 §7 of `AGENTS.md` before you open a pull request: your work is not finished when the pull request
 is open, it is finished when a review comes back clean, and the findings reach you as a message in
@@ -31,7 +31,18 @@ missing — most gaps are already named there, with a category and a cost.
 
 ## The next item
 
-Issue #46 (`test/readme-claims.test.js` "README Claim 4" flakiness under concurrency) is resolved by atomic file writes in `nodeFs.write()` in `runtime/git/fs-node.js`.
+**`test/readme-claims.test.js` "README Claim 4" is flaky under load.** It passes on its own, every
+time, and fails intermittently — roughly one run in four — when the whole suite runs at
+`--test-concurrency=2`. The failure is `readPackIndex: index file is too small (0 bytes)`: the peer
+process reads the pack index before it has been written, so it is a race in the fixture's
+handshake, not a defect in `runtime/git/pack-index.js`. CI has not hit it yet.
+
+Fix this first. It is the highest-value item in the queue and it is not about correctness — it is
+about whether this repository can run unattended at all. `test` is a required check, so a flake
+means a pull request fails for a reason no agent can reproduce or act on. Nothing merges, the next
+scheduled session opens a second pull request against the same files, and by the time anyone looks
+there are two conflicting branches and no explanation. This is the class of failure that stops the
+project silently, which is exactly what the review loop was built to prevent.
 
 Everything in the "our shortfall" category is closed except where `docs/COMPROMISES.md` is wrong
 about itself — see the note below. The codebase enforces UI field display derivation through the
@@ -49,14 +60,31 @@ is parsed and never populated. The grammar landed; the adoption did not. Filed a
 
 ---
 
-## Newly Specified Standards & Next Priorities
+## After that: the queue is empty, and that is the thing to fix
 
-Decision records have been added to specify key roadmap items for Wave 2 and Wave 3:
-1. **DATEV EXTF Format Export (`docs/decisions/2026-08-18-datev-extf-export-structure-and-booking-header-format.md`)**: Formatversion 700 header specification, Windows-1252 encoding, SKR03/SKR04 account mapping, and booking line syntax.
-2. **EN 16931 / XRechnung E-Invoicing (`docs/decisions/2026-08-18-en16931-xrechnung-e-invoicing-semantic-data-model.md`)**: Semantic business terms (BT-1 to BT-115), German XRechnung KoSIT 3.0 profile, UBL 2.1 syntax binding, and UStG § 14 mandatory B2B rollout schedule.
-3. **GoBD Period Close & Balance Carryforward (`docs/decisions/2026-08-18-gobd-period-close-and-balance-carryforward.md`)**: GoBD period locking (Festschreibung), immutability of posted journal entries, reversing entry mechanisms (Storno), P&L closing into GuV/Equity, and balance sheet opening carryforward (Saldenvortrag).
+The release-blocker set is closed. That does **not** mean the project is finished — it means
+nobody has turned the next part of the roadmap into issues yet, and until someone does, every
+session falls back to auditing documentation and re-checking claims. Six of the eight pull
+requests merged before 2026-08-17 were tests about documents. That is what an empty queue looks
+like from the outside, and it is not progress.
 
-Future sessions can implement these specifications by building unit-tested exporters and period-close kernel validation rules.
+**So specifying is now the highest-value work available**, and `AGENTS.md` §6 routes you to it
+automatically whenever fewer than three unclaimed `ready` issues remain. Read
+`docs/SPECIFYING.md`, then decompose from `docs/ROADMAP-V1.md`:
+
+- **Part 2** — the ten v1.0 gate conditions. Each is several issues.
+- **Part 3, Wave 2 — the claims.** The general ledger, AR/AP, VAT and OSS returns, period close,
+  multi-currency. This is the substance of the product and none of it is queued.
+- **Part 3, Wave 3 — sellable.** DATEV, XRechnung/EN-16931, one inbound dialect, PDF from
+  versioned templates.
+
+Decompose; do not invent. Every issue cites the sentence it came from and says how it will be
+verified. Where a regulatory or accounting fact is needed — a VAT rate, a chart-of-accounts
+convention, what a year-end close asserts — **research it and cite a primary source**. Do not open
+an issue asking for it. See "Decide it yourself" below.
+
+This supersedes the earlier note here that no work remained. It was true about the blocker set and
+misleading about everything else.
 
 ---
 
@@ -73,6 +101,20 @@ Note also that `.gitignore` currently excludes `release.json`, because that name
 workspace artefact. Whoever eventually does arm the release will have to separate those two
 meanings first.
 
+**Wave 5 accounting work, as implementation** — opening balances, credit notes, a refund month,
+fixed assets, accruals, year-end close. `docs/READINESS.md` lists these and they are real. A first
+entry genuinely cannot be posted today, and that is the wall between this and a real company's
+first week.
+
+Do not *implement* these from recollection: each rests on a fact that has to be right — which
+opening-balance convention, which depreciation method, what the year-end close actually asserts —
+and a guess produces an ERP that is confidently wrong about money, which is the worst thing this
+product could be.
+
+But that is an argument for **looking it up**, not for stopping. These are facts with
+authoritative sources, not preferences awaiting an owner's taste. Research them, cite them,
+decide, and record the decision. Specifying and implementing them is wanted.
+
 ---
 
 ## Decide it yourself
@@ -84,7 +126,7 @@ about Polish VAT than an afternoon of reading does.
 **A regulatory, accounting or standards question is yours.** Research it, cite a primary source per
 `docs/SPECIFYING.md` §2 — the regulation, the official specification, the tax authority's own
 documentation, with the article or field that applies — then decide and write it down as a new file
-in `docs/decisions/`, named `YYYY-MM-DD-short-slug.md`: the question, the answer, the source, and what would
+in a new file in `docs/decisions/`, named `YYYY-MM-DD-short-slug.md`: the question, the answer, the source, and what would
 have to change for the answer to change. One file per decision, so parallel sessions never collide.
 
 Where sources genuinely disagree, say so in the record, implement the reading you can defend, and
@@ -94,3 +136,8 @@ name the other. A documented decision someone can overturn beats a question nobo
 yours to establish, *whether* Poland is in v1 is decided in the manifesto and the roadmap, and if it
 is in neither then that is a `needs-decision` issue and you stop. And the release signing key
 (#15 rr7), which is refused for a security reason rather than a preference.
+
+Changed 2026-08-17, twice. The file first said "leave it", so nothing moved and nobody even wrote
+the questions down. Then it said "ask", which would have produced a fortnight of unanswered issues.
+Neither was the owner's bottleneck to be — it is a research problem, and research is what these
+sessions are good at.
