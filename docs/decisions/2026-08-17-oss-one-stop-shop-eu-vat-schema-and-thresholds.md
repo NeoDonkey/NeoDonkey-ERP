@@ -29,3 +29,25 @@ How should NeoDonkey handle cross-border B2C sales of physical goods and telecom
 ## Verification Method
 - **POLISM Rule Validation:** Model rules verifying threshold aggregation `sum of gross-amount over invoice where destination-country != home-country and buyer-type == 'consumer'`.
 - **Unit Test Verification:** Unit test asserts that transaction #N crossing €10,000 total switches subsequent line VAT treatment from domestic to destination VAT rate, throwing a validation failure if domestic VAT is assigned when threshold is exceeded.
+
+## What Must Land First
+
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+
+## Unblocked Implementable Issue Specifications
+
+### Issue 1: `feat(vat): enforce EU cross-border B2C €10,000 OSS threshold aggregation and destination rate switching`
+- **Title:** Enforce EU cross-border B2C €10,000 OSS threshold aggregation and destination VAT rate switching
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 3 (Wave 2: VAT/OSS returns)
+- **Primary Source Citation:** Council Directive 2006/112/EC Article 59c & § 18h UStG
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
+- **Labels:** `ready`, `area:runtime`, `p1`
+- **Verification Method:** Unit test in `test/oss-vat-threshold.test.js` creates a series of cross-border B2C sales invoices, asserting that once cumulative annual net sales exceed `"10000.00 EUR"`, subsequent invoices automatically require destination-country VAT rates and reject domestic VAT assignment.
+
+### Issue 2: `feat(vat): aggregate quarterly Union OSS VAT return data grouped by EU member state`
+- **Title:** Aggregate quarterly Union OSS VAT return data grouped by destination EU member state
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 3 (Wave 2: VAT/OSS returns)
+- **Primary Source Citation:** Council Implementing Regulation (EU) 2020/194 & Council Directive 2006/112/EC Articles 358–369x
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
+- **Labels:** `ready`, `area:runtime`, `p1`
+- **Verification Method:** Unit test in `test/oss-quarterly-return.test.js` aggregates posted cross-border B2C transactions for Q1, verifying exact net taxable amounts and VAT amounts per destination EU Member State using BigInt minor units without float arithmetic.
