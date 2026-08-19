@@ -156,6 +156,15 @@ change. One file per decision, so parallel sessions never collide — the same r
 entries moved (§9). Where sources genuinely disagree, say so, implement the reading you can
 defend, and name the other.
 
+**A decision is not work. File the issue that builds it.** A record says *how DATEV EXTF works*;
+an issue says *build it, and here is the test that proves it*. Every decision record must come with
+at least one `ready` issue implementing it, in the same pull request, citing the record by path and
+stating how it will be verified. On 2026-08-19 this repository held seven records — DATEV,
+EN-16931, period close, OSS VAT, multi-currency, PDF — and not one issue to implement any of them,
+so the queue emptied and every session routed back to writing more documentation. The research was
+excellent and the product did not move a line. If a record genuinely unblocks nothing yet, say so
+in it and name what must land first.
+
 Nobody reads this repository for days at a time. An issue asking a human to choose is not the
 cautious option; it is the stalled one, and it waits on somebody who knows less about Polish VAT
 than an afternoon of reading does. **A documented decision that can be overturned beats a question

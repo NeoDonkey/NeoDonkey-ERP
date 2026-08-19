@@ -271,6 +271,32 @@ jobs:
               can defend, and name the other. A documented decision someone can overturn beats
               a question nobody answers.
 
+          A DECISION IS NOT WORK. FILE THE ISSUE THAT BUILDS IT.
+
+          This is the step that was missing, and it cost a day. By 2026-08-19 this repository held
+          seven decision records — DATEV EXTF, EN-16931, GoBD period close, OSS VAT, multi-currency,
+          PDF invoicing — and **not one issue to implement any of them**. The queue was down to a
+          register fix, a test guard and a README claim, so every session routed back to
+          documentation. The research was excellent and the product did not move a line.
+
+          A record says *how DATEV EXTF works*. An issue says *build it, and here is the test that
+          proves it*. Writing the first without the second is how a specifying session ends with
+          nothing anyone can pick up.
+
+          So every decision record you write must be accompanied, in the same pull request, by at
+          least one `ready` issue that implements it:
+
+            - Title it as the thing to build, not the thing to know.
+            - Cite the decision record by path, and the roadmap line it serves.
+            - State the verification: the test that fails without the change, or the command that
+              demonstrates it. `docs/SPECIFYING.md` §3 is binding here.
+            - Give it an `area:` label and a priority, and label it `ready` only if it is genuinely
+              implementable as written by someone who has read the record and nothing else.
+            - Link it from the record, so the record says what it unblocked.
+
+          If a record genuinely unblocks nothing yet — it settles a question a later item depends
+          on — say that in the record explicitly, and name what would have to land first.
+
           WHAT IS STILL NOT YOURS
 
           Scope, and only scope. *How* Polish VAT reporting works is researchable and yours to
