@@ -50,6 +50,55 @@ env:
   MAX_ROUNDS: 3
 
 jobs:
+  # A push revokes the previous round's approval. This job holds the whole gate together.
+  #
+  # GitHub's auto-merge, once enabled, survives every subsequent push and fires the moment the
+  # REQUIRED checks pass. `review` is deliberately not a required check — making it one would let
+  # a dead provider deadlock the queue — so `test` alone is what auto-merge waits for. The
+  # consequence, on #71 on 2026-08-18:
+  #
+  #   10:30:13  review round 1 → VERDICT: CLEAN   → queue enabled auto-merge
+  #             (a new commit is pushed)
+  #   10:35:00  test green on the new commit
+  #   10:35:03  MERGED, on `test` alone
+  #   10:35:55  review round 2 → CHANGES_REQUIRED, correctly finding duplicate decision records
+  #   10:36:03  the relay posted "Nothing merges until a round comes back VERDICT: CLEAN"
+  #
+  # Refused work merged, and the loop then said in writing that it could not have. The gate held
+  # for the first round and was bypassed by every round after it.
+  #
+  # So each new commit withdraws the standing approval, and only a clean verdict on THAT commit
+  # puts it back. This job carries no checkout and reads nothing from the branch.
+  revoke:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Withdraw any standing auto-merge until this commit is reviewed
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -uo pipefail
+          # `--disable-auto` fails when auto-merge was never enabled, which is the common case and
+          # not an error. Only a real failure is worth reporting, because a silent failure here
+          # means the next push merges unreviewed.
+          if out=$(gh pr merge "$PR" --repo "$GH_REPO" --disable-auto 2>&1); then
+            echo "auto-merge withdrawn for #${PR} until this commit has a clean verdict"
+          elif printf '%s' "$out" | grep -qiE 'not enabled|no auto|does not have auto'; then
+            echo "no standing auto-merge on #${PR} — nothing to withdraw"
+          else
+            echo "::error::Could not withdraw auto-merge on #${PR}: ${out}"
+            echo "::error::A standing approval from an earlier round may merge this commit unreviewed."
+            exit 1
+          fi
+
   review:
     runs-on: ubuntu-latest
     # Everything this job does is comment, label and relay. It deliberately cannot write to
