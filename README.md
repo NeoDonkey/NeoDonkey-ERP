@@ -6,6 +6,26 @@ Write down your company as you would describe it. That is your ERP.
 
 ---
 
+## Why now
+
+[DATEV Mittelstand Faktura is being discontinued on 31 December 2026](https://www.datev.de/web/de/mittelstand/faktura).
+Thousands of German SMEs are looking for an alternative that preserves their DATEV workflow.
+
+NeoDonkey already ships **DATEV EXTF v700 serialization** — your bookings flow straight to
+your tax advisor's system, no migration, no middleware, no lock-in.
+
+| | NeoDonkey | Odoo | SAP S/4HANA | Lexware |
+|---|---|---|---|---|
+| **Open source** | ✅ EUPL-1.2 | ✅ LGPL | ❌ Proprietary | ❌ Proprietary |
+| **Self-hosted** | ✅ Zero dependencies | ⚠️ Python/PostgreSQL | ❌ Cloud or on-prem | ❌ Cloud only |
+| **DATEV EXTF v700** | ✅ Built-in | ⚠️ Community module | ❌ Third-party | ⚠️ Export only |
+| **No vendor lock-in** | ✅ Git-native | ⚠️ Custom ORM | ❌ Custom formats | ❌ Cloud data |
+| **Works offline** | ✅ Browser + Git | ❌ Server required | ❌ Server required | ❌ Cloud required |
+
+> *Status: [publishable, not production](docs/READINESS.md). [See what's done and what's open](docs/COMPROMISES.md).*
+
+---
+
 ## What this is
 
 An ERP with no server, no cloud, no vendor, and no dependencies. Your company lives in a folder.
@@ -166,9 +186,9 @@ Read [docs/COMPROMISES.md](docs/COMPROMISES.md). It is not an appendix, it is a 
 
 Briefly: encryption exists and is proven but is not reachable from `kernel.open()` yet, so **no HR
 data and no customer PII**; a company's opening balance cannot be posted; no browser has run the
-WebRTC path and nothing renders the peer-introduction QR code; no DATEV export and no dialects; and
-the runtime is JavaScript rather than WebAssembly — a decision, recorded as FD-8, not an omission.
-Each entry names the principle it bends, why, what is lost, who owns it, and the exit path.
+WebRTC path and nothing renders the peer-introduction QR code; and the runtime is JavaScript
+rather than WebAssembly — a decision, recorded as FD-8, not an omission. Each entry names the
+principle it bends, why, what is lost, who owns it, and the exit path.
 
 One claim we had to retract: **you cannot double-click `index.html`.** A browser refuses to load ES
 modules from a `file://` URL, and OPFS, persistent storage and WebAuthn all need a secure context.
@@ -188,6 +208,12 @@ maintainable, and yours.
 | [docs/COMPROMISES.md](docs/COMPROMISES.md) | Every place reality bent a principle. With owners. |
 | [docs/CONTRACT.md](docs/CONTRACT.md) | Module interfaces — the seams that make dependencies removable. |
 | [runtime/polism/grammar.md](runtime/polism/grammar.md) | The normative rule grammar. Additive-only, forever. |
+
+## Learn more
+
+- 🌐 [Website & blog](https://neodonkey.github.io)
+- 🐦 [Updates on X](https://x.com/neodonkey)
+- 💬 [GitHub Discussions](https://github.com/NeoDonkey/NeoDonkey-ERP/discussions)
 
 ---
 
