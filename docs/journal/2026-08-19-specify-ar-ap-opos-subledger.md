@@ -19,7 +19,7 @@
 3. **Specification & Decision Content:**
    - Researched primary sources: GoBD BMF Circular 2019-11-28 margin numbers 67–71, HGB § 246/§ 238, UStG § 17 Abs. 1.
    - Specified subledger account ranges (Debitoren 10000–69999, Kreditoren 70000–99999), Open Item lifecycle, full/partial payment clearing, and cash discount (Skonto) automatic VAT adjustments.
-   - Created two `ready` implementable issues unblocked by the decision:
+   - Specified two `ready` implementable issue specifications unblocked by the decision:
      - `feat(subledger): implement AR/AP subledger accounts and open item lifecycle tracking (OPOS)`
      - `feat(subledger): automatic cash discount (Skonto) clearing and proportional VAT adjustment`
 
