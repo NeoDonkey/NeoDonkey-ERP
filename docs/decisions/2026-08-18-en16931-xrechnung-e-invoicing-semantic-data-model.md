@@ -41,6 +41,7 @@ How should NeoDonkey model semantic electronic invoices per the European Standar
 - **Title:** Generate EN 16931 / XRechnung v3.0 UBL 2.1 XML e-invoices from invoice entity objects
 - **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "XRechnung/EN-16931 invoices") and Part 3 (Wave 3: XRechnung e-invoicing)
 - **Primary Source Citation:** EN 16931-1:2017 §6.1 & KoSIT XRechnung Specification v3.0.1 §3
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
 - **Labels:** `ready`, `area:runtime`, `p1`
 - **Verification Method:** Unit test in `test/xrechnung-generator.test.js` passes a domain invoice object (seller/buyer VAT IDs, lines, amounts, currency) to `generateXRechnungUblXml(invoice)` and asserts:
   1. Root element is `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">`.
@@ -52,6 +53,7 @@ How should NeoDonkey model semantic electronic invoices per the European Standar
 - **Title:** Parse and validate inbound EN 16931 UBL 2.1 e-invoices into domain invoice structures
 - **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "one inbound dialect") and Part 3 (Wave 3: one inbound dialect)
 - **Primary Source Citation:** EN 16931-1:2017 §6.2 & KoSIT XRechnung Specification v3.0.1 §4
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
 - **Labels:** `ready`, `area:runtime`, `p1`
 - **Verification Method:** Unit test in `test/xrechnung-parser.test.js` parses valid and invalid UBL 2.1 XML strings using `parseXRechnungUblXml(xml)` and asserts:
   1. Valid XML returns a structured domain invoice object with correct string values and `BigInt` minor unit monetary fields.

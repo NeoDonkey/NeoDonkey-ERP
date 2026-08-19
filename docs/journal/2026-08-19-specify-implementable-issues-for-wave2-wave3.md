@@ -22,6 +22,8 @@ Added `## Unblocked Implementable Issues` sections to three core decision record
 
 Updated `docs/NEXT.md` to reference the newly unblocked implementable issue definitions.
 
+In round 1 of review, corrected gate condition references in GoBD issues to Gate Condition 6 ("It speaks to the outside world") and added explicit constraint lists (`Constraints: zero dependencies, no build step...`) to all 6 issue specifications per `SPECIFYING.md` §6.
+
 ## Verification
-- Verified file creation using `read_file`.
+- Verified file updates using `read_file`.
 - Executed `npm test` to ensure all 672 test assertions and hygiene checks (`test/journal-hygiene.test.js`, `test/audit-location-citations.test.js`, `test/documented-counts.test.js`) pass cleanly without errors.

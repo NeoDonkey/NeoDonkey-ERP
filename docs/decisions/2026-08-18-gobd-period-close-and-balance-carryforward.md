@@ -32,8 +32,9 @@ How should NeoDonkey implement financial period closing (Festschreibung), postin
 
 ### Issue 1: `feat(ledger): enforce GoBD period locking (Festschreibung) and posting immutability in kernel`
 - **Title:** Enforce GoBD financial period locking and immutability guard in ledger kernel
-- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 1: "period locking") and Part 3 (Wave 2: period close)
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "It speaks to the outside world") and Part 3 (Wave 2: period close)
 - **Primary Source Citation:** GoBD BMF Circular 2019-11-28 margin numbers 88–95 & HGB § 239
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
 - **Labels:** `ready`, `area:runtime`, `p1`
 - **Verification Method:** Unit test in `test/period-lock-guard.test.js` locks an accounting period (e.g. `2026-01`) using `lockPeriod({ year: 2026, month: 1 })` and asserts:
   1. Attempting to post a new transaction with transaction date in `2026-01` throws an explicit `PeriodLockedError`.
@@ -41,8 +42,9 @@ How should NeoDonkey implement financial period closing (Festschreibung), postin
 
 ### Issue 2: `feat(ledger): generate year-end P&L closing and balance carryforward (Saldenvortrag) entries`
 - **Title:** Generate financial year-end P&L closing and balance sheet carryforward entries
-- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 1: "trial balance") and Part 3 (Wave 2: general ledger, period close)
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "It speaks to the outside world") and Part 3 (Wave 2: general ledger, period close)
 - **Primary Source Citation:** HGB § 242 & § 252 Abs. 1 Nr. 1 (Bilanzidentität)
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
 - **Labels:** `ready`, `area:runtime`, `p1`
 - **Verification Method:** Unit test in `test/year-end-close.test.js` executes `generateYearEndClose(fiscalYear)` on a populated trial balance and asserts:
   1. All revenue and expense accounts (P&L) are zeroed out into the GuV summary account and equity.
