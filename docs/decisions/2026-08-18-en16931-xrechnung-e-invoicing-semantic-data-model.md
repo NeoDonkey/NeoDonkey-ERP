@@ -37,7 +37,7 @@ How should NeoDonkey model semantic electronic invoices per the European Standar
 
 ## Unblocked Implementable Issues
 
-### Issue 1: `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects`
+### Issue 1: `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects` → [#83](https://github.com/NeoDonkey/NeoDonkey-ERP/issues/83)
 - **Title:** Generate EN 16931 / XRechnung v3.0 UBL 2.1 XML e-invoices from invoice entity objects
 - **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "XRechnung/EN-16931 invoices") and Part 3 (Wave 3: XRechnung e-invoicing)
 - **Primary Source Citation:** EN 16931-1:2017 §6.1 & KoSIT XRechnung Specification v3.0.1 §3
@@ -49,7 +49,7 @@ How should NeoDonkey model semantic electronic invoices per the European Standar
   3. Mandatory business terms BT-1 through BT-115 are present in specified XML tags.
   4. All currency amounts match exact integer `BigInt` minor units rendered as `0.00` formatted strings without floating point arithmetic.
 
-### Issue 2: `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms`
+### Issue 2: `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms` → [#84](https://github.com/NeoDonkey/NeoDonkey-ERP/issues/84)
 - **Title:** Parse and validate inbound EN 16931 UBL 2.1 e-invoices into domain invoice structures
 - **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "one inbound dialect") and Part 3 (Wave 3: one inbound dialect)
 - **Primary Source Citation:** EN 16931-1:2017 §6.2 & KoSIT XRechnung Specification v3.0.1 §4
