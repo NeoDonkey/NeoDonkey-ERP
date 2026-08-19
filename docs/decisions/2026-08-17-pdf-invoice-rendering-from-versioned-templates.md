@@ -26,6 +26,10 @@ How should NeoDonkey render human-readable PDF invoices from versioned templates
 ## Verification Method
 - **Deterministic Rendering Test:** A test renders an invoice document against a versioned template, checks that the rendered HTML/SVG output SHA-256 matches a fixed fixture, and confirms no external network references exist.
 
+## What Must Land First
+
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+
 ## Unblocked Implementable Issue Specifications
 
 ### Issue 1: `feat(pdf): deterministic HTML/SVG/CSS template renderer for sales invoices`

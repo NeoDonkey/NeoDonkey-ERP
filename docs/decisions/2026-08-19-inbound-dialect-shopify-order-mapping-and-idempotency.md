@@ -40,6 +40,10 @@ How should NeoDonkey ingest, parse, and map inbound e-commerce order data from e
 ## Verification Method
 - **Unit Test Verification:** Unit tests in `test/inbound-shopify.test.js` parse sample Shopify order JSON payloads, assert zero float usage via source guard, verify exact BigInt minor unit calculations, confirm line discount allocation using largest-remainder, and test that duplicate ingestion calls return existing records without duplicate commits.
 
+## What Must Land First
+
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+
 ## Unblocked Implementable Issue Specifications
 
 ### Issue 1: `feat(inbound): parse and convert Shopify REST/GraphQL JSON orders into domain sales-invoice documents with strict monetary parsing`

@@ -30,6 +30,10 @@ How should NeoDonkey handle cross-border B2C sales of physical goods and telecom
 - **POLISM Rule Validation:** Model rules verifying threshold aggregation `sum of gross-amount over invoice where destination-country != home-country and buyer-type == 'consumer'`.
 - **Unit Test Verification:** Unit test asserts that transaction #N crossing €10,000 total switches subsequent line VAT treatment from domestic to destination VAT rate, throwing a validation failure if domestic VAT is assigned when threshold is exceeded.
 
+## What Must Land First
+
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+
 ## Unblocked Implementable Issue Specifications
 
 ### Issue 1: `feat(vat): enforce EU cross-border B2C €10,000 OSS threshold aggregation and destination rate switching`
