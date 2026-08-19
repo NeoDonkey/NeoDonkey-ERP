@@ -219,7 +219,12 @@ export function serializeDatevHeader(config) {
     sachkontenlange = 4,
     bezeichnung = 'General Ledger Export',
     creationDate,
-    dikennzeichen = 'ND'
+    dikennzeichen = 'ND',
+    buchungstyp = 1,
+    rechnungslegungskreis = 0,
+    festschreibung = 0,
+    currency = 'EUR',
+    wkz = 'EUR'
   } = config;
 
   if (beraterNummer === undefined || beraterNummer === null || beraterNummer === '') {
@@ -264,6 +269,8 @@ export function serializeDatevHeader(config) {
     timestampStr = '20260101000000000';
   }
 
+  const headerWkz = currency || wkz;
+
   // 26 fixed attributes for EXTF Header Line 1 per DATEV EXTF v700 spec
   const headerFields = [
     '"EXTF"',                         // 1. EXTF Marker
@@ -284,10 +291,10 @@ export function serializeDatevHeader(config) {
     `"${datumBis}"`,                 // 16. Datum bis YYYYMMDD
     `"${bezeichnung}"`,              // 17. Bezeichnung / Stapelbezeichnung
     '""',                            // 18. Diktatzeichen
-    '1',                             // 19. Buchungstyp (1 = Finanzbuchführung)
-    '0',                             // 20. Rechnungslegungskreis (0 = Allgemein)
-    '0',                             // 21. Festschreibung (0 = keine Festschreibung / frei)
-    '"EUR"',                         // 22. WKZ
+    `${buchungstyp}`,                // 19. Buchungstyp (1 = Finanzbuchführung)
+    `${rechnungslegungskreis}`,      // 20. Rechnungslegungskreis (0 = Allgemein)
+    `${festschreibung}`,             // 21. Festschreibung (0 = keine Festschreibung / frei)
+    `"${headerWkz}"`,                // 22. WKZ
     '""',                            // 23. Reserviert
     '""',                            // 24. Derivat
     '""',                            // 25. Reserviert
@@ -313,15 +320,21 @@ export function formatDatevAmount(amount) {
   }
 
   let cents;
+  let isNegative = false;
   if (typeof amount === 'bigint') {
-    cents = amount < 0n ? -amount : amount;
+    isNegative = amount < 0n;
+    cents = isNegative ? -amount : amount;
   } else if (typeof amount === 'number') {
     if (!Number.isInteger(amount)) {
       throw new TypeError(`formatDatevAmount expects integer minor units (cents), got float ${amount}`);
     }
+    isNegative = amount < 0;
     cents = BigInt(Math.abs(amount));
   } else if (typeof amount === 'string') {
     const trimmed = amount.trim();
+    if (trimmed.startsWith('-')) {
+      isNegative = true;
+    }
     // Check if money string like "119.00 EUR" or "119.00" or "-119.00 EUR"
     const m = /^(-?\d+)(?:[.,](\d{1,2}))?(?:\s+[A-Z]{3})?$/.exec(trimmed);
     if (m) {
@@ -339,7 +352,9 @@ export function formatDatevAmount(amount) {
 
   const whole = cents / 100n;
   const frac = (cents % 100n).toString().padStart(2, '0');
-  return `${whole},${frac}`;
+  const formatted = `${whole},${frac}`;
+
+  return { formatted, isNegative };
 }
 
 /**
@@ -362,7 +377,12 @@ export function formatDatevDate(date) {
   if (typeof date === 'string') {
     const s = date.trim();
     if (/^\d{4}$/.test(s)) {
-      return s; // Already DDMM
+      const dd = Number(s.slice(0, 2));
+      const mm = Number(s.slice(2, 4));
+      if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+        return s; // Valid DDMM
+      }
+      throw new TypeError(`Invalid DDMM date string: '${s}' (day 01-31, month 01-12)`);
     }
     const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
     if (iso) {
@@ -434,7 +454,7 @@ export function serializeDatevPostingLine(posting) {
     wkz = 'EUR'
   } = posting;
 
-  const formattedAmount = formatDatevAmount(amount);
+  const { formatted: formattedAmount, isNegative } = formatDatevAmount(amount);
 
   let shFlag = 'S';
   const sideValue = (side || sollHaben || '').toString().toLowerCase();
@@ -442,6 +462,9 @@ export function serializeDatevPostingLine(posting) {
     shFlag = 'H';
   } else if (sideValue === 'debit' || sideValue === 's' || sideValue === 'soll') {
     shFlag = 'S';
+  } else if (isNegative) {
+    // If side was not explicitly given and amount is negative, default to 'H'
+    shFlag = 'H';
   }
 
   const accountStr = konto !== undefined && konto !== null ? String(konto) : '';
@@ -499,4 +522,16 @@ export function serializeDatevExport(config, postings) {
   const header = serializeDatevHeader(config);
   const body = serializeDatevPostings(postings);
   return header + body;
+}
+
+/**
+ * Serializes a full DATEV EXTF v700 export file encoded into Windows-1252 byte representation.
+ *
+ * @param {Object} config Export configuration object for header
+ * @param {Array<Object>} postings List of posting objects
+ * @returns {Uint8Array} Windows-1252 encoded Uint8Array bytes of full EXTF file content
+ */
+export function serializeDatevExportBytes(config, postings) {
+  const csvText = serializeDatevExport(config, postings);
+  return encodeWindows1252(csvText);
 }
