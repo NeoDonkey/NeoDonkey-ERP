@@ -53,8 +53,8 @@ is parsed and never populated. The grammar landed; the adoption did not. Filed a
 
 Decision records in `docs/decisions/` have been updated with concrete, `ready` implementable issue definitions for Wave 2 and Wave 3:
 1. **DATEV EXTF Format Export (`docs/decisions/2026-08-18-datev-extf-export-structure-and-booking-header-format.md`)**:
-   - `feat(datev): serialize EXTF v700 header and column metadata lines` (#81, `area:runtime`, `p1`, `ready`)
-   - `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries` (#82, `area:runtime`, `p1`, `ready`)
+   - `feat(datev): serialize EXTF v700 header and column metadata lines` (#81, `area:runtime`, `p1`, `ready`) - **Completed**
+   - `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries` (#82, `area:runtime`, `p1`, `ready`) - **Completed**
 2. **EN 16931 / XRechnung E-Invoicing (`docs/decisions/2026-08-18-en16931-xrechnung-e-invoicing-semantic-data-model.md`)**:
    - `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects` (#83, `area:runtime`, `p1`, `ready`)
    - `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms` (#84, `area:runtime`, `p1`, `ready`)
