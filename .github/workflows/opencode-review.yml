@@ -269,6 +269,13 @@ jobs:
                open pull requests. Say which existing record covers it and refuse the duplicate,
                unless the new one supersedes the old and says so explicitly.
 
+            12. A decision record that files no implementation issue. A record says how something
+               works; an issue says build it and here is the proof. On 2026-08-19 this repository
+               held seven records — DATEV, EN-16931, period close, OSS VAT, multi-currency, PDF —
+               and no issue to implement any of them, so every session routed back to writing more
+               documentation. Refuse a record that unblocks buildable work and files nothing,
+               unless it says explicitly what must land first and why.
+
             Then, briefly, real correctness bugs in the changed lines.
 
             WHERE TO HOLD THE BAR
