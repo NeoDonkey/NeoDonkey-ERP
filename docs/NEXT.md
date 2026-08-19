@@ -53,16 +53,27 @@ is parsed and never populated. The grammar landed; the adoption did not. Filed a
 
 Decision records in `docs/decisions/` have been updated with concrete, `ready` implementable issue definitions for Wave 2 and Wave 3:
 1. **DATEV EXTF Format Export (`docs/decisions/2026-08-18-datev-extf-export-structure-and-booking-header-format.md`)**:
-   - `feat(datev): serialize EXTF v700 header and column metadata lines` (`area:runtime`, `p1`, `ready`)
-   - `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries` (`area:runtime`, `p1`, `ready`)
+   - `feat(datev): serialize EXTF v700 header and column metadata lines` (#81, `area:runtime`, `p1`, `ready`)
+   - `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries` (#82, `area:runtime`, `p1`, `ready`)
 2. **EN 16931 / XRechnung E-Invoicing (`docs/decisions/2026-08-18-en16931-xrechnung-e-invoicing-semantic-data-model.md`)**:
-   - `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects` (`area:runtime`, `p1`, `ready`)
-   - `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms` (`area:runtime`, `p1`, `ready`)
+   - `feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices from domain invoice objects` (#83, `area:runtime`, `p1`, `ready`)
+   - `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices against mandatory BT terms` (#84, `area:runtime`, `p1`, `ready`)
 3. **GoBD Period Close & Balance Carryforward (`docs/decisions/2026-08-18-gobd-period-close-and-balance-carryforward.md`)**:
    - `feat(ledger): enforce GoBD period locking (Festschreibung) and posting immutability in kernel` (`area:runtime`, `p1`, `ready`)
    - `feat(ledger): generate year-end P&L closing and balance carryforward (Saldenvortrag) entries` (`area:runtime`, `p1`, `ready`)
+4. **Inbound Dialect - Shopify E-Commerce Orders (`docs/decisions/2026-08-19-inbound-dialect-shopify-order-mapping-and-idempotency.md`)**:
+   - `feat(inbound): parse and convert Shopify REST/GraphQL JSON orders into domain sales-invoice documents with strict monetary parsing` (`area:runtime`, `p1`, `ready`)
+   - `feat(inbound): enforce idempotency and source-reference tracking for inbound dialect orders` (`area:runtime`, `p1`, `ready`)
+5. **Multi-Currency Accounting & Realized FX (`docs/decisions/2026-08-17-multi-currency-accounting-and-realized-exchange-gains-losses.md`)**:
+   - `feat(currency): FX rate table and spot conversion with BigInt rational math` (`area:runtime`, `p1`, `ready`)
+   - `feat(ledger): post realized foreign exchange gains/losses on payment settlement` (`area:runtime`, `p1`, `ready`)
+6. **PDF Invoice Rendering (`docs/decisions/2026-08-17-pdf-invoice-rendering-from-versioned-templates.md`)**:
+   - `feat(pdf): deterministic HTML/SVG/CSS template renderer for sales invoices` (`area:runtime`, `p1`, `ready`)
+7. **EU One-Stop Shop (OSS) VAT (`docs/decisions/2026-08-17-oss-one-stop-shop-eu-vat-schema-and-thresholds.md`)**:
+   - `feat(vat): enforce EU cross-border B2C €10,000 OSS threshold aggregation and destination rate switching` (`area:runtime`, `p1`, `ready`)
+   - `feat(vat): aggregate quarterly Union OSS VAT return data grouped by EU member state` (`area:runtime`, `p1`, `ready`)
 
-Engineering sessions can immediately take any of these unclaimed `ready` issues to build unit-tested implementations and move Gate Condition 6 ("It speaks to the outside world") to green.
+Filed open issues (#81, #82, #83, #84) can be claimed immediately by engineering sessions. Additional defined issue specifications above will be claimable as soon as filed as open GitHub issues.
 
 ---
 

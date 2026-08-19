@@ -25,3 +25,17 @@ How should NeoDonkey render human-readable PDF invoices from versioned templates
 
 ## Verification Method
 - **Deterministic Rendering Test:** A test renders an invoice document against a versioned template, checks that the rendered HTML/SVG output SHA-256 matches a fixed fixture, and confirms no external network references exist.
+
+## What Must Land First
+
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+
+## Unblocked Implementable Issue Specifications
+
+### Issue 1: `feat(pdf): deterministic HTML/SVG/CSS template renderer for sales invoices`
+- **Title:** Implement deterministic HTML/SVG/CSS template renderer for sales invoices matching DIN 5008
+- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 3 (Wave 3: PDF from versioned templates)
+- **Primary Source Citation:** GoBD BMF Circular 2019-11-28 § 3.2.1 & DIN 5008:2020-03 Form B
+- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no external asset references (images/fonts must be inline data URIs).
+- **Labels:** `ready`, `area:runtime`, `p1`
+- **Verification Method:** Unit test in `test/pdf-template-renderer.test.js` renders a domain sales invoice against a versioned DIN 5008 HTML/SVG template, asserts that the output HTML/SVG SHA-256 digest matches a fixed expected fixture, and asserts that no external `http://` or `https://` URIs exist in the output.
