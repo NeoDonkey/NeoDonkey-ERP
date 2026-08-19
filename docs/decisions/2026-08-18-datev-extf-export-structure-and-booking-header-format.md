@@ -35,7 +35,7 @@ How should NeoDonkey structure and export general ledger journal entries into DA
 
 ## Unblocked Implementable Issues
 
-### Issue 1: `feat(datev): serialize EXTF v700 header and column metadata lines`
+### Issue 1: `feat(datev): serialize EXTF v700 header and column metadata lines` → [#81](https://github.com/NeoDonkey/NeoDonkey-ERP/issues/81)
 - **Title:** Serialize DATEV EXTF Formatversion 700 header and column metadata header
 - **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "DATEV EXTF export") and Part 3 (Wave 3: DATEV EXTF export)
 - **Primary Source Citation:** DATEV eG *Schnittstellenentwicklungs-Leitfaden DATEV-Format V7.00* (Art.-Nr. 42301) §2.1 & §2.2
@@ -46,7 +46,7 @@ How should NeoDonkey structure and export general ledger journal entries into DA
   2. Line 2 contains exact DATEV column header strings matching format version 700.
   3. Rejects invalid consultant numbers or non-4-digit account lengths with descriptive `TypeError`.
 
-### Issue 2: `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries`
+### Issue 2: `feat(datev): serialize EXTF v700 posting lines from SKR03/SKR04 ledger entries` → [#82](https://github.com/NeoDonkey/NeoDonkey-ERP/issues/82)
 - **Title:** Serialize general ledger journal postings into DATEV EXTF v700 CSV booking lines
 - **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 6: "DATEV EXTF export") and Part 3 (Wave 3: DATEV EXTF export)
 - **Primary Source Citation:** DATEV eG *Schnittstellenentwicklungs-Leitfaden DATEV-Format V7.00* §3.1 (Felder des Buchungsstapels)
