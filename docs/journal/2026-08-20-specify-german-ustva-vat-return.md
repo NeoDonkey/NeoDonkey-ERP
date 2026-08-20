@@ -17,7 +17,7 @@ This session executed a SPECIFY task as mandated by `AGENTS.md` §6 for queue ma
    - Listed constraints (zero runtime dependencies, no build step, `node:*` restricted to `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()`, no business vocabulary in `runtime/`, no float in monetary paths) and explicit verification methods for both.
 
 3. **Updated Roadmap Tracking (`docs/NEXT.md`):**
-   - Added the new USt-VA specification and issue definitions under Wave 2 / Gate Condition 6.
+   - Added the new USt-VA specification and issue definitions under Wave 2 / Gate Condition 6 and updated last-updated header to 2026-08-20.
 
 ## Verification
 

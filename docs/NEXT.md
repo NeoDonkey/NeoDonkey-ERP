@@ -3,7 +3,7 @@
 Read this before starting work. Rewrite it before finishing. It is the first file anyone opens,
 so it is the one that has to be true.
 
-**Updated:** 2026-08-19
+**Updated:** 2026-08-20
 
 ---
 
