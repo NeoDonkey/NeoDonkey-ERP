@@ -22,5 +22,5 @@ Performed a `SPECIFY` session for Wave 2 / Gate Condition 5 ("Sensitive data is 
 5. **Preserved Plan Integrity:** Unchanged `docs/NEXT.md` because the high-level roadmap sequence remains intact.
 
 ## Verification
-- Ran `npm test`: All 679 tests passed (with 2 quarantined skipped tests).
-- Ran structural hygiene test (`test/journal-hygiene.test.js`) and verified that the new decision record adheres to required headers (including `## Source` / `## What Must Land First`).
+- Ran `npm test`: 675 tests total, 673 pass, 2 skipped (0 failures).
+- Ran structural hygiene test (`node --test test/journal-hygiene.test.js`): All 5 tests pass.

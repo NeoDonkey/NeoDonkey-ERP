@@ -37,7 +37,7 @@ How does NeoDonkey reconcile GDPR Article 17 ("Right to be forgotten" / right to
 
 ## What Must Land First
 
-Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or a session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. The specifications below define the exact scope, primary sources, constraints, labels, and verification methods for those issues.
+Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or an automated session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. Autonomous agent sessions running without GitHub API write tokens cannot invoke the GitHub REST API to create issues directly; therefore, documenting the exact implementable specifications with primary sources, labels, constraints, and test verification criteria in this decision record under `## Unblocked Implementable Issue Specifications` provides the authoritative specification for maintainers/bots to file as open GitHub issues.
 
 ## Unblocked Implementable Issue Specifications
 
