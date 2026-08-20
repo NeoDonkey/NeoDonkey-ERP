@@ -73,8 +73,8 @@ Decision records in `docs/decisions/` have been updated with concrete, `ready` i
    - `feat(vat): enforce EU cross-border B2C €10,000 OSS threshold aggregation and destination rate switching` (`area:runtime`, `p1`, `ready`)
    - `feat(vat): aggregate quarterly Union OSS VAT return data grouped by EU member state` (`area:runtime`, `p1`, `ready`)
 8. **German Domestic VAT Advance Return (USt-VA) (`docs/decisions/2026-08-20-german-vat-ustva-return-and-elster-xml-schema.md`)**:
-   - `feat(vat): aggregate German USt-VA tax grid Kennziffern (Kz 81, 86, 41, 66, 83) from ledger postings` (not yet filed, `area:runtime`, `p1`, `ready`)
-   - `feat(vat): serialize German USt-VA ELSTER XML document structure` (not yet filed, `area:runtime`, `p1`, `ready`)
+   - `feat(vat): aggregate German USt-VA tax grid Kennziffern (Kz 81, 86, 41, 66, 83) from ledger postings` (unfiled specification, `area:runtime`, `p1`)
+   - `feat(vat): serialize German USt-VA ELSTER XML document structure` (unfiled specification, `area:runtime`, `p1`)
 
 Filed open issues (#81, #82, #83, #84) can be claimed immediately by engineering sessions. Additional defined issue specifications above will be claimable as soon as filed as open GitHub issues.
 
