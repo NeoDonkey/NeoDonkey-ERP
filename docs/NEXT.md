@@ -75,6 +75,9 @@ Decision records in `docs/decisions/` have been updated with concrete, `ready` i
 8. **GoBD Verfahrensdokumentation & Code Cross-References (`docs/decisions/2026-08-20-gobd-verfahrensdokumentation-and-auditor-verification.md`)**:
    - `docs(gobd): write Verfahrensdokumentation cross-referencing GoBD requirements to runtime code paths` (`area:docs`, `p1`, `ready`)
    - `test(gobd): add automated Verfahrensdokumentation link and code-reference integrity test` (`area:tests`, `p1`, `ready`)
+9. **Scale Benchmarks & Columnar Projection Indexing (`docs/decisions/2026-08-20-scale-benchmarks-and-columnar-index-materialization.md`)**:
+   - `feat(index): implement columnar projection typed arrays and lazy document materialization` (`area:runtime`, `p1`, `ready`)
+   - `test(benchmark): 10M object packfile geometric repacking and 1M document index query benchmark suite` (`area:tests`, `p1`, `ready`)
 
 Filed open issues (#81, #82, #83, #84) can be claimed immediately by engineering sessions. Additional defined issue specifications above will be claimable as soon as filed as open GitHub issues.
 
