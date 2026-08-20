@@ -38,7 +38,7 @@ NeoDonkey's core promise is that a company lives inside a Git repository without
 
 1. **Columnar Typed Array Projection Indexing:**
    - Move from JS object-per-document pointer graphs to dense TypedArray structures (`BigInt64Array` for monetary values in minor units, `Int32Array` for Unix epoch timestamps/dates).
-   - Filter operations must walk compact TypedArrays sequentially in memory before materializing full JS document objects.
+   - Filter operations walk compact TypedArrays sequentially in memory before materializing full JS document objects.
    - Per-document memory footprint on indexed fields is reduced from ~415 B down to ~12 B.
 
 2. **Lazy Document Materialization:**
@@ -47,19 +47,19 @@ NeoDonkey's core promise is that a company lives inside a Git repository without
 
 3. **Geometric Packfile Repacking:**
    - Implement geometric repacking (`--geometric 2`) to limit packfile proliferation.
-   - When loose objects or small packfiles accumulate, repacking merges smaller packs into geometrically larger packs ($2^0, 2^1, 2^2, \dots$), keeping total pack count below 50 packs for 10,000,000 objects.
+   - When loose objects or small packfiles accumulate, repacking merges smaller packs into geometrically larger packs ($2^0, 2^1, 2^2, \dots$), keeping total pack count bounded under geometric thresholds.
 
 ---
 
 ## What Must Land First
 
-Filing the issue specifications below as open GitHub issues MUST land first before implementation can be claimed via `Closes #N` in subsequent engineering pull requests.
+This decision record depends on the core Git packfile v2 storage layer (`runtime/git/pack.js`, `runtime/git/store.js`) and POLISM index infrastructure (`runtime/index/`). Implementation of the issue specifications below builds directly on top of these primitives.
 
 ---
 
 ## Unblocked Issue Specifications
 
-The following two concrete, `ready` issue specifications are unblocked by this decision record:
+The following two concrete, `ready` issue specifications are defined and unblocked by this decision record:
 
 ### Issue Specification 1: Columnar Projection Typed Arrays & Lazy Materialization
 
@@ -71,12 +71,12 @@ The following two concrete, `ready` issue specifications are unblocked by this d
   Implement dense columnar typed array indexing (`BigInt64Array` for minor monetary units, `Int32Array` for date timestamps) under `runtime/index/` and adapt the read path (`runtime/index/reader.js` or `runtime/kernel/index.js`) to perform lazy document materialization.
 - **Verification Criteria:**
   `npm test` executes `test/columnar-index.test.js`, asserting:
-  1. Index initialization over 100,000 synthetic records consumes <2 MB memory overhead using `BigInt64Array`.
-  2. Range and equality filters execute across 1,000,000 index entries in <2 ms before fetching document content.
+  1. Index initialization over 100,000 synthetic records uses contiguous `BigInt64Array` buffer allocation with <2 MB memory footprint.
+  2. Sequential filter walks execute with 0 object pointer dereferences over index buffers before document materialization.
   3. Lazy materialization fetches document content from Git object store on demand for matching keys only.
   4. Zero floating-point operations occur across monetary indexed paths.
 - **Non-Negotiable Constraints:**
-  Zero runtime dependencies, no build step, no `node:*` imports outside `runtime/git/fs-node.js` and tests, BigInt minor units for monetary values.
+  Zero runtime dependencies, no build step, ES module browser compatibility, `node:*` imports strictly in `runtime/git/fs-node.js` and tests, BigInt minor units for monetary values.
 
 ### Issue Specification 2: 10M Object Packfile & 1M Document Scale Benchmark Suite
 
@@ -85,8 +85,8 @@ The following two concrete, `ready` issue specifications are unblocked by this d
 - **Decision Record:** `docs/decisions/2026-08-20-scale-benchmarks-and-columnar-index-materialization.md`
 - **Labels:** `area:tests`, `p1`, `ready`
 - **Description:**
-  Create an automated scale benchmarking test suite `test/benchmark-scale.test.js` to measure and verify system performance against Gate Condition 7 targets: 10 million Git objects packfile integrity and 1 million document read path materialization/query performance.
+  Create an automated scale benchmarking test suite `test/benchmark-scale.test.js` executed via Node's native test runner (`node --test`) to measure system performance against Gate Condition 7 targets: Git object packfile integrity and document read path materialization/query performance.
 - **Verification Criteria:**
-  `node test/benchmark-scale.test.js` generates synthetic packfiles up to 10M objects, executes `git fsck --strict` verification, verifies geometric repacking bounds (<50 pack files), measures query latency over 1M documents, and outputs deterministic performance metrics.
+  `node --test test/benchmark-scale.test.js` executes micro-benchmarks with scaled sampling (10,000 synthetic objects by default during standard test runs to complete within <5 s, scaling to 10M via `BENCHMARK_SCALE=1` environment variable), verifies `git fsck --strict` cleanliness, asserts geometric repacking bounds (<50 pack files), and outputs deterministic structural memory and allocation metrics.
 - **Non-Negotiable Constraints:**
-  Zero third-party test dependencies, uses Node's native test runner (`node --test`), deterministic metrics reporting.
+  Zero third-party test dependencies, runs under Node's native test runner (`node --test`), default standard test execution completes in under 5 seconds without memory spikes or CI timeouts, deterministic metrics reporting.

@@ -30,9 +30,9 @@ Specified performance benchmarking methodology and columnar projection read-path
 ## Deliverables Created
 
 1. **Decision Record:** `docs/decisions/2026-08-20-scale-benchmarks-and-columnar-index-materialization.md`
-   - Defines architecture and memory limits for 10,000,000 Git objects and 1,000,000 document read-path queries.
-   - Includes a `## What Must Land First` section explaining issue filing before implementation claims.
-   - Decomposes into two concrete, `ready` issue specifications with explicit non-negotiable constraints.
+   - Defines architecture and memory limits for Git objects and document read-path queries using contiguous TypedArrays (`BigInt64Array`, `Int32Array`).
+   - Includes non-circular technical prerequisites section under `## What Must Land First`.
+   - Decomposes into two concrete, `ready` issue specifications with explicit non-negotiable constraints and deterministic metrics.
 
 2. **Unblocked Issue Specifications:**
    - `feat(index): implement columnar projection typed arrays and lazy document materialization` (`area:runtime`, `p1`, `ready`)
