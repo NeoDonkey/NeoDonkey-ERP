@@ -299,3 +299,202 @@ export function serializeDatevHeader(config) {
 
   return `${line1}\r\n${line2}\r\n`;
 }
+
+/**
+ * Formats monetary amounts into DATEV decimal comma format without float operations.
+ *
+ * @param {string|bigint|Object} amount e.g. "119.00 EUR", "119.00", 11900n, or Money object { minor: 11900n }
+ * @returns {string} e.g. "119,00"
+ */
+export function formatDatevAmount(amount) {
+  if (amount === undefined || amount === null) {
+    throw new TypeError('Monetary amount is required');
+  }
+
+  let minor;
+  if (typeof amount === 'bigint') {
+    minor = amount;
+  } else if (typeof amount === 'object' && amount !== null && typeof amount.minor === 'bigint') {
+    minor = amount.minor;
+  } else if (typeof amount === 'string') {
+    const clean = amount.trim().split(' ')[0];
+    const isNeg = clean.startsWith('-');
+    const digits = isNeg ? clean.slice(1) : clean;
+    const parts = digits.split('.');
+    try {
+      if (parts.length === 1) {
+        minor = BigInt(parts[0]) * 100n;
+      } else if (parts.length === 2) {
+        const whole = BigInt(parts[0] || '0');
+        const fracStr = parts[1].padEnd(2, '0').slice(0, 2);
+        if (!/^\d+$/.test(parts[0] || '0') || !/^\d+$/.test(fracStr)) {
+          throw new TypeError(`Invalid monetary amount format: '${amount}'`);
+        }
+        minor = whole * 100n + BigInt(fracStr);
+      } else {
+        throw new TypeError(`Invalid monetary amount format: '${amount}'`);
+      }
+    } catch (err) {
+      if (err instanceof TypeError) throw err;
+      throw new TypeError(`Invalid monetary amount format: '${amount}'`);
+    }
+    if (isNeg) minor = -minor;
+  } else if (typeof amount === 'number') {
+    throw new TypeError(`Floating point numbers not permitted in monetary path: got ${amount}`);
+  } else {
+    throw new TypeError(`Invalid monetary amount: expected string, BigInt, or Money object, got ${typeof amount}`);
+  }
+
+  const absMinor = minor < 0n ? -minor : minor;
+  const wholePart = (absMinor / 100n).toString();
+  const fracPart = (absMinor % 100n).toString().padStart(2, '0');
+  return `${wholePart},${fracPart}`;
+}
+
+/**
+ * Formats a date string into DATEV DDMM format.
+ *
+ * @param {string} dateStr e.g. "2026-08-15", "20260815", "15082026", "1508"
+ * @returns {string} DDMM string (e.g. "1508")
+ */
+export function formatDatevBelegdatum(dateStr) {
+  if (typeof dateStr !== 'string') {
+    throw new TypeError(`Invalid belegdatum: expected string, got ${typeof dateStr}`);
+  }
+  const clean = dateStr.replace(/[-./]/g, '');
+  if (/^\d{4}$/.test(clean)) {
+    return clean;
+  }
+  if (/^\d{8}$/.test(clean)) {
+    if (clean.startsWith('20') || clean.startsWith('19')) {
+      const mm = clean.slice(4, 6);
+      const dd = clean.slice(6, 8);
+      return `${dd}${mm}`;
+    }
+    return clean.slice(0, 4);
+  }
+  throw new TypeError(`Invalid belegdatum format: '${dateStr}'`);
+}
+
+/**
+ * Escapes text for DATEV CSV and truncates to max length if specified.
+ *
+ * @param {unknown} val
+ * @param {number} [maxLen]
+ * @returns {string} Double-quoted CSV field string
+ */
+function escapeAndTruncate(val, maxLen) {
+  if (val === undefined || val === null || val === '') return '""';
+  const str = String(val);
+  const truncated = maxLen ? str.slice(0, maxLen) : str;
+  const escaped = truncated.replace(/"/g, '""');
+  return `"${escaped}"`;
+}
+
+/**
+ * Serializes a general ledger posting object into a DATEV EXTF v700 booking line string.
+ *
+ * @param {Object} posting
+ * @param {string|bigint|Object} posting.amount Monetary amount (e.g. "119.00 EUR", 11900n)
+ * @param {string} [posting.sollHaben] "S" or "H"
+ * @param {string} [posting.side] "debit" or "credit" (mapped to "S" or "H" if sollHaben absent)
+ * @param {string} [posting.wkz="EUR"] Currency code
+ * @param {number|string} posting.konto G/L Account (e.g. 8400 or "8400")
+ * @param {number|string} [posting.gegenkonto] Offset Account (e.g. 1400 or "1400")
+ * @param {number|string} [posting.buSchlussel] Tax key code / posting key
+ * @param {string} posting.belegdatum Document date (e.g. "2026-08-15" or "1508")
+ * @param {string} [posting.belegfeld1] Document ref 1 (max 36 chars)
+ * @param {string} [posting.belegfeld2] Document ref 2 (max 12 chars)
+ * @param {string} [posting.skonto] Skonto amount
+ * @param {string} [posting.buchungstext] Description (max 60 chars)
+ * @returns {string} Semicolon-delimited 116-column CSV line
+ */
+export function serializeDatevBookingLine(posting) {
+  if (!posting || typeof posting !== 'object') {
+    throw new TypeError('serializeDatevBookingLine requires a posting object');
+  }
+
+  const {
+    amount,
+    sollHaben,
+    side,
+    wkz = 'EUR',
+    kurs = '',
+    basisUmsatz = '',
+    wkzBasisUmsatz = '',
+    konto,
+    gegenkonto = '',
+    buSchlussel = '',
+    belegdatum,
+    belegfeld1 = '',
+    belegfeld2 = '',
+    skonto = '',
+    buchungstext = ''
+  } = posting;
+
+  if (amount === undefined || amount === null) {
+    throw new TypeError('posting amount is required');
+  }
+  if (konto === undefined || konto === null || konto === '') {
+    throw new TypeError('posting konto is required');
+  }
+  if (belegdatum === undefined || belegdatum === null || belegdatum === '') {
+    throw new TypeError('posting belegdatum is required');
+  }
+
+  const formattedAmount = formatDatevAmount(amount);
+
+  let shFlag = '';
+  if (sollHaben === 'S' || sollHaben === 'H') {
+    shFlag = sollHaben;
+  } else if (side === 'debit') {
+    shFlag = 'S';
+  } else if (side === 'credit') {
+    shFlag = 'H';
+  } else {
+    shFlag = 'S';
+  }
+
+  const formattedDatum = formatDatevBelegdatum(belegdatum);
+
+  const fields = new Array(DATEV_EXTF_V700_COLUMNS.length).fill('""');
+
+  fields[0] = escapeAndTruncate(formattedAmount);
+  fields[1] = escapeAndTruncate(shFlag);
+  fields[2] = escapeAndTruncate(wkz);
+  fields[3] = escapeAndTruncate(kurs);
+  fields[4] = escapeAndTruncate(basisUmsatz);
+  fields[5] = escapeAndTruncate(wkzBasisUmsatz);
+  fields[6] = escapeAndTruncate(konto);
+  fields[7] = escapeAndTruncate(gegenkonto);
+  fields[8] = escapeAndTruncate(buSchlussel);
+  fields[9] = escapeAndTruncate(formattedDatum);
+  fields[10] = escapeAndTruncate(belegfeld1, 36);
+  fields[11] = escapeAndTruncate(belegfeld2, 12);
+  fields[12] = escapeAndTruncate(skonto);
+  fields[13] = escapeAndTruncate(buchungstext, 60);
+
+  return fields.join(';');
+}
+
+/**
+ * Assembles a complete DATEV EXTF v700 export file with header lines and booking lines.
+ *
+ * @param {Object} options
+ * @param {Object} options.header Header configuration object for serializeDatevHeader
+ * @param {Array<Object>} options.postings List of posting objects for serializeDatevBookingLine
+ * @returns {string} Full CRLF-terminated EXTF CSV export string
+ */
+export function serializeDatevExport({ header, postings }) {
+  if (!Array.isArray(postings)) {
+    throw new TypeError('postings must be an array');
+  }
+
+  const headerStr = serializeDatevHeader(header);
+  const postingLines = postings.map(p => serializeDatevBookingLine(p)).join('\r\n');
+
+  if (postingLines.length > 0) {
+    return `${headerStr}${postingLines}\r\n`;
+  }
+  return headerStr;
+}
