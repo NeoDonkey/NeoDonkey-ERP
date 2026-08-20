@@ -118,31 +118,59 @@ test('generateXRechnungUblXml generates a compliant EN 16931 UBL 2.1 XML documen
   assert.ok(xml.includes('<cbc:PriceAmount currencyID="EUR">150.00</cbc:PriceAmount>'));
 });
 
-test('generateXRechnungUblXml throws TypeError on missing mandatory fields or missing vatRate/countryCode', () => {
+test('generateXRechnungUblXml sums multiple VAT breakdown taxAmounts when totals.taxAmount is omitted', () => {
+  const invoice = {
+    invoiceNumber: 'INV-2026-002',
+    issueDate: '2026-08-20',
+    buyerReference: 'REF-001',
+    seller: { name: 'Seller', address: { countryCode: 'DE' } },
+    buyer: { name: 'Buyer', address: { countryCode: 'DE' } },
+    lines: [
+      { name: 'Standard Line', vatRate: '19', amount: '5000.00 EUR', unitPrice: '5000.00 EUR' },
+      { name: 'Reduced Line', vatRate: '7', amount: '2000.00 EUR', unitPrice: '2000.00 EUR' }
+    ],
+    vatBreakdown: [
+      { taxableAmount: '5000.00 EUR', taxAmount: '950.00 EUR', vatCategory: 'S', vatRate: '19' },
+      { taxableAmount: '2000.00 EUR', taxAmount: '140.00 EUR', vatCategory: 'AA', vatRate: '7' }
+    ]
+  };
+
+  const xml = generateXRechnungUblXml(invoice);
+
+  // Assert total tax amount is exactly 950.00 + 140.00 = 1090.00 EUR
+  assert.ok(xml.includes('<cac:TaxTotal>\n    <cbc:TaxAmount currencyID="EUR">1090.00</cbc:TaxAmount>'));
+});
+
+test('generateXRechnungUblXml throws TypeError on missing mandatory fields or missing vatRate/countryCode/buyerReference', () => {
   assert.throws(() => generateXRechnungUblXml(null), TypeError);
   assert.throws(() => generateXRechnungUblXml({}), /invoiceNumber/);
   assert.throws(() => generateXRechnungUblXml({ invoiceNumber: 'INV-1' }), /issueDate/);
-  assert.throws(() => generateXRechnungUblXml({ invoiceNumber: 'INV-1', issueDate: '2026-08-20' }), /seller/);
+  assert.throws(() => generateXRechnungUblXml({ invoiceNumber: 'INV-1', issueDate: '2026-08-20' }), /buyerReference/);
+  assert.throws(() => generateXRechnungUblXml({ invoiceNumber: 'INV-1', issueDate: '2026-08-20', buyerReference: 'REF' }), /seller/);
   assert.throws(() => generateXRechnungUblXml({
     invoiceNumber: 'INV-1',
     issueDate: '2026-08-20',
+    buyerReference: 'REF',
     seller: { name: 'Seller' }
   }), /countryCode/);
   assert.throws(() => generateXRechnungUblXml({
     invoiceNumber: 'INV-1',
     issueDate: '2026-08-20',
+    buyerReference: 'REF',
     seller: { name: 'Seller', address: { countryCode: 'DE' } },
     buyer: { name: 'Buyer' }
   }), /countryCode/);
   assert.throws(() => generateXRechnungUblXml({
     invoiceNumber: 'INV-1',
     issueDate: '2026-08-20',
+    buyerReference: 'REF',
     seller: { name: 'Seller', address: { countryCode: 'DE' } },
     buyer: { name: 'Buyer', address: { countryCode: 'FR' } }
   }), /invoice line/);
   assert.throws(() => generateXRechnungUblXml({
     invoiceNumber: 'INV-1',
     issueDate: '2026-08-20',
+    buyerReference: 'REF',
     seller: { name: 'Seller', address: { countryCode: 'DE' } },
     buyer: { name: 'Buyer', address: { countryCode: 'FR' } },
     lines: [{ name: 'Item 1' }]
@@ -150,6 +178,7 @@ test('generateXRechnungUblXml throws TypeError on missing mandatory fields or mi
   assert.throws(() => generateXRechnungUblXml({
     invoiceNumber: 'INV-1',
     issueDate: '2026-08-20',
+    buyerReference: 'REF',
     seller: { name: 'Seller', address: { countryCode: 'DE' } },
     buyer: { name: 'Buyer', address: { countryCode: 'FR' } },
     lines: [{ name: 'Item 1', vatRate: '19', amount: '100.00 EUR', unitPrice: '100.00 EUR' }]

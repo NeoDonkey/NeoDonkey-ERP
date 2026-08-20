@@ -8,7 +8,7 @@
  * NeoDonkey runtime/money primitives.
  */
 
-import { toMoney, CURRENCIES } from '../money/money.js';
+import { toMoney, sum, CURRENCIES } from '../money/money.js';
 import { formatScaled } from '../money/decimal.js';
 
 /**
@@ -70,6 +70,10 @@ export function generateXRechnungUblXml(invoice) {
   if (!invoice.issueDate || !/^\d{4}-\d{2}-\d{2}$/.test(invoice.issueDate)) {
     throw new TypeError(`Invalid or missing issueDate (BT-2): expected YYYY-MM-DD, got '${invoice.issueDate}'`);
   }
+  if (!invoice.buyerReference) {
+    throw new TypeError('Missing mandatory field: buyerReference (BT-10)');
+  }
+
   const invoiceTypeCode = invoice.invoiceTypeCode || '380';
   const currency = invoice.currency || 'EUR';
 
@@ -99,7 +103,7 @@ export function generateXRechnungUblXml(invoice) {
     throw new TypeError('Invoice must contain at least one invoice line (BT-126)');
   }
 
-  const buyerRef = invoice.buyerReference || 'N/A';
+  const buyerRef = invoice.buyerReference;
 
   // --- Format seller address and tax scheme ---
   const sellerVatId = invoice.seller.vatId || '';
@@ -158,8 +162,16 @@ export function generateXRechnungUblXml(invoice) {
   if (invoice.totals?.taxAmount !== undefined) {
     totalTaxAmountParsed = parseMonetaryField(invoice.totals.taxAmount, currency);
   } else {
-    // Sum from first breakdown element or throw
-    totalTaxAmountParsed = parseMonetaryField(vatBreakdown[0].taxAmount, currency);
+    // Sum all taxAmount fields from vatBreakdown using zero-float sum()
+    const taxAmounts = vatBreakdown.map(vat => {
+      const parsed = parseMonetaryField(vat.taxAmount, currency);
+      return `${parsed.amountStr} ${parsed.currency}`;
+    });
+    const totalTaxMoney = sum(taxAmounts, currency);
+    totalTaxAmountParsed = {
+      amountStr: formatScaled(totalTaxMoney.minor, CURRENCIES[currency] ?? 2),
+      currency
+    };
   }
 
   const xmlTaxSubtotals = vatBreakdown.map((vat, idx) => {
