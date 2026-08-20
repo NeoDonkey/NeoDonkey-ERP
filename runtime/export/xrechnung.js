@@ -79,12 +79,20 @@ export function generateXRechnungUblXml(invoice) {
   if (!invoice.seller.name) {
     throw new TypeError('Missing mandatory seller name (BT-27)');
   }
+  const sellerAddr = invoice.seller.address || {};
+  if (!sellerAddr.countryCode) {
+    throw new TypeError('Missing mandatory seller countryCode (BT-40)');
+  }
 
   if (!invoice.buyer || typeof invoice.buyer !== 'object') {
     throw new TypeError('Missing mandatory buyer details (BT-44)');
   }
   if (!invoice.buyer.name) {
     throw new TypeError('Missing mandatory buyer name (BT-44)');
+  }
+  const buyerAddr = invoice.buyer.address || {};
+  if (!buyerAddr.countryCode) {
+    throw new TypeError('Missing mandatory buyer countryCode (BT-55)');
   }
 
   if (!Array.isArray(invoice.lines) || invoice.lines.length === 0) {
@@ -94,12 +102,10 @@ export function generateXRechnungUblXml(invoice) {
   const buyerRef = invoice.buyerReference || 'N/A';
 
   // --- Format seller address and tax scheme ---
-  const sellerAddr = invoice.seller.address || {};
   const sellerVatId = invoice.seller.vatId || '';
   const sellerContact = invoice.seller.contact || {};
 
   // --- Format buyer address and tax scheme ---
-  const buyerAddr = invoice.buyer.address || {};
   const buyerVatId = invoice.buyer.vatId || '';
 
   // --- Process Invoice Lines ---
@@ -109,10 +115,14 @@ export function generateXRechnungUblXml(invoice) {
       throw new TypeError(`Invoice line ${lineId} missing mandatory name (BT-153)`);
     }
 
+    if (line.vatRate === undefined || line.vatRate === null) {
+      throw new TypeError(`Invoice line ${lineId} missing mandatory vatRate (BT-152)`);
+    }
+
     const quantity = line.quantity !== undefined && line.quantity !== null ? String(line.quantity) : '1.00';
     const unitCode = line.unitCode || 'C62';
     const vatCategory = line.vatCategory || 'S';
-    const vatRate = line.vatRate !== undefined ? String(line.vatRate) : '19';
+    const vatRate = String(line.vatRate);
 
     const lineExt = parseMonetaryField(line.lineExtensionAmount ?? line.amount, currency);
     const unitPrice = parseMonetaryField(line.unitPrice ?? line.price, currency);
@@ -138,28 +148,29 @@ export function generateXRechnungUblXml(invoice) {
   });
 
   // --- Process Tax Breakdowns ---
-  const vatBreakdown = Array.isArray(invoice.vatBreakdown) && invoice.vatBreakdown.length > 0
-    ? invoice.vatBreakdown
-    : [{
-        taxableAmount: invoice.totals?.taxExclusiveAmount || '0.00 EUR',
-        taxAmount: invoice.totals?.taxAmount || '0.00 EUR',
-        vatCategory: 'S',
-        vatRate: '19'
-      }];
+  if (!Array.isArray(invoice.vatBreakdown) || invoice.vatBreakdown.length === 0) {
+    throw new TypeError('Invoice missing mandatory vatBreakdown array (BT-116/BT-118)');
+  }
+
+  const vatBreakdown = invoice.vatBreakdown;
 
   let totalTaxAmountParsed;
   if (invoice.totals?.taxAmount !== undefined) {
     totalTaxAmountParsed = parseMonetaryField(invoice.totals.taxAmount, currency);
   } else {
-    // Sum from vatBreakdown
+    // Sum from first breakdown element or throw
     totalTaxAmountParsed = parseMonetaryField(vatBreakdown[0].taxAmount, currency);
   }
 
-  const xmlTaxSubtotals = vatBreakdown.map((vat) => {
+  const xmlTaxSubtotals = vatBreakdown.map((vat, idx) => {
+    if (vat.vatRate === undefined || vat.vatRate === null) {
+      throw new TypeError(`VAT breakdown item ${idx + 1} missing mandatory vatRate (BT-119)`);
+    }
+
     const taxable = parseMonetaryField(vat.taxableAmount, currency);
     const taxAmt = parseMonetaryField(vat.taxAmount, currency);
     const vatCat = vat.vatCategory || 'S';
-    const vatPct = vat.vatRate !== undefined ? String(vat.vatRate) : '19';
+    const vatPct = String(vat.vatRate);
 
     return `    <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${escapeXml(taxable.currency)}">${taxable.amountStr}</cbc:TaxableAmount>
@@ -185,7 +196,7 @@ export function generateXRechnungUblXml(invoice) {
   const sellerStreetXml = sellerAddr.street ? `\n        <cbc:StreetName>${escapeXml(sellerAddr.street)}</cbc:StreetName>` : '';
   const sellerCityXml = sellerAddr.city ? `\n        <cbc:CityName>${escapeXml(sellerAddr.city)}</cbc:CityName>` : '';
   const sellerZipXml = sellerAddr.postalCode ? `\n        <cbc:PostalZone>${escapeXml(sellerAddr.postalCode)}</cbc:PostalZone>` : '';
-  const sellerCountryXml = `\n        <cac:Country>\n          <cbc:IdentificationCode>${escapeXml(sellerAddr.countryCode || 'DE')}</cbc:IdentificationCode>\n        </cac:Country>`;
+  const sellerCountryXml = `\n        <cac:Country>\n          <cbc:IdentificationCode>${escapeXml(sellerAddr.countryCode)}</cbc:IdentificationCode>\n        </cac:Country>`;
 
   const sellerTaxSchemeXml = sellerVatId
     ? `\n      <cac:PartyTaxScheme>\n        <cbc:CompanyID>${escapeXml(sellerVatId)}</cbc:CompanyID>\n        <cac:TaxScheme>\n          <cbc:ID>VAT</cbc:ID>\n        </cac:TaxScheme>\n      </cac:PartyTaxScheme>`
@@ -202,7 +213,7 @@ export function generateXRechnungUblXml(invoice) {
   const buyerStreetXml = buyerAddr.street ? `\n        <cbc:StreetName>${escapeXml(buyerAddr.street)}</cbc:StreetName>` : '';
   const buyerCityXml = buyerAddr.city ? `\n        <cbc:CityName>${escapeXml(buyerAddr.city)}</cbc:CityName>` : '';
   const buyerZipXml = buyerAddr.postalCode ? `\n        <cbc:PostalZone>${escapeXml(buyerAddr.postalCode)}</cbc:PostalZone>` : '';
-  const buyerCountryXml = `\n        <cac:Country>\n          <cbc:IdentificationCode>${escapeXml(buyerAddr.countryCode || 'DE')}</cbc:IdentificationCode>\n        </cac:Country>`;
+  const buyerCountryXml = `\n        <cac:Country>\n          <cbc:IdentificationCode>${escapeXml(buyerAddr.countryCode)}</cbc:IdentificationCode>\n        </cac:Country>`;
 
   const buyerTaxSchemeXml = buyerVatId
     ? `\n      <cac:PartyTaxScheme>\n        <cbc:CompanyID>${escapeXml(buyerVatId)}</cbc:CompanyID>\n        <cac:TaxScheme>\n          <cbc:ID>VAT</cbc:ID>\n        </cac:TaxScheme>\n      </cac:PartyTaxScheme>`
