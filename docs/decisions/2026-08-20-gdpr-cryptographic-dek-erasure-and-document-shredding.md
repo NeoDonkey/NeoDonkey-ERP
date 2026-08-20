@@ -37,7 +37,10 @@ How does NeoDonkey reconcile GDPR Article 17 ("Right to be forgotten" / right to
 
 ## What Must Land First
 
-Filing the issue specifications below as open GitHub issues (e.g., by a maintainer or an automated session with GitHub issue creation privileges) MUST land first before implementation can be claimed. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. Autonomous agent sessions running without GitHub API write tokens cannot invoke the GitHub REST API to create issues directly; therefore, documenting the exact implementable specifications with primary sources, labels, constraints, and test verification criteria in this decision record under `## Unblocked Implementable Issue Specifications` provides the authoritative specification for maintainers/bots to file as open GitHub issues.
+This decision record settles a structural cryptographic question for Gate Condition 5 and Wave 2, and unblocks implementation once prerequisites land. Per AGENTS.md §5, the following items must land first before implementation of these specifications can be claimed:
+
+1. **Filing GitHub Issues:** The issue specifications below must be filed as open GitHub issues (with issue numbers `#N`) so engineering sessions can claim implementation via `Closes #N`.
+2. **Group Encryption Key Management & Envelope Cryptography:** Foundational group key management (epoch secret derivation, KEK wrap/unwrap in `runtime/crypto/envelope.js`, and peer vault DEK storage) must land first to provide the envelope encryption layer that this shredding protocol targets.
 
 ## Unblocked Implementable Issue Specifications
 
