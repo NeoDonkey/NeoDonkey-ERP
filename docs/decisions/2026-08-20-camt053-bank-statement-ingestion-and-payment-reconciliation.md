@@ -36,7 +36,7 @@ How should NeoDonkey ingest, parse, and convert electronic bank statement files 
 ### 2. Zero-Float Monetary Precision
 1. **String Parsing to BigInt Minor Units:**
    - Bank statement amounts extracted from XML (`<Amt Ccy="EUR">1250.50</Amt>`) or MT940 (`:61:260820C1250,50NTRF...`) MUST NEVER be converted to IEEE 754 floating-point numbers (`parseFloat` / `Number` are strictly forbidden).
-   - Amounts are parsed directly as strings into minor unit `BigInt` values (`1250.50 EUR` → `125050n EUR`) using `toMoney(rawString, currency)`.
+   - Amounts are parsed directly as string tokens into minor unit `BigInt` values (`1250.50 EUR` → `125050n EUR`) using `toMoney(rawString + " " + currency)` (e.g. `toMoney("1250.50 EUR")`).
    - Debit entries (`DBIT` / `D`) carry negative sign or are classified as outgoing cash disbursements; Credit entries (`CRDT` / `C`) are classified as incoming customer receipts.
 
 ### 3. XML Field Mapping to Open Item (OPOS) Reconciliation Tiers
@@ -79,7 +79,7 @@ General subledger OPOS payment matching, full/partial clearing lifecycle, Skonto
 
 ## What Must Land First
 
-This decision record defines 2 implementable issue specifications below. Filing these specifications as open GitHub issues (by a maintainer or issue-creation automation) MUST land first before implementation work can be claimed via `Closes #N` in an engineering session.
+This decision record defines 2 implementable issue specifications below. An engineering session requires an open GitHub issue number `#N` to claim implementation via `Closes #N` in a draft pull request per AGENTS.md §5. Filing these specifications as open GitHub issues (by a maintainer or automated issue-creation workflow) MUST land first before implementation work can be claimed via `Closes #N` in an engineering session.
 
 ---
 
