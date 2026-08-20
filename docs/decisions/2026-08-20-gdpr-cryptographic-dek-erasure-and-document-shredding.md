@@ -37,25 +37,7 @@ How does NeoDonkey reconcile GDPR Article 17 ("Right to be forgotten" / right to
 
 ## What Must Land First
 
-This decision record settles a structural cryptographic question for Gate Condition 5 and Wave 2, and unblocks implementation once prerequisites land. Per AGENTS.md §5, the following items must land first before implementation of these specifications can be claimed:
+This decision record settles the architectural and legal reconciliation between GDPR Article 17 erasure and GoBD § 3.2.1 immutability via crypto-shredding for Gate Condition 5 and Wave 2. Per AGENTS.md §5, it unblocks no immediate claimable work until the following prerequisite groundwork lands:
 
-1. **Filing GitHub Issues:** The issue specifications below must be filed as open GitHub issues (with issue numbers `#N`) so engineering sessions can claim implementation via `Closes #N`.
-2. **Group Encryption Key Management & Envelope Cryptography:** Foundational group key management (epoch secret derivation, KEK wrap/unwrap in `runtime/crypto/envelope.js`, and peer vault DEK storage) must land first to provide the envelope encryption layer that this shredding protocol targets.
-
-## Unblocked Implementable Issue Specifications
-
-### Issue 1: `feat(crypto): implement DEK key destruction, zeroing, and tombstoning in runtime/crypto/shred.js`
-- **Title:** Implement subject DEK key destruction, zero-sweep, and tombstone registration in runtime crypto
-- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 5: Cryptographic DEK destruction for GDPR erasure) & Part 3 (Wave 2)
-- **Primary Source Citation:** Regulation (EU) 2016/679 (GDPR) Article 17 & Article 32(1)(a); EDPB Opinion 05/2014
-- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
-- **Labels:** `ready`, `area:crypto`, `p1`
-- **Verification Method:** Unit test in `test/crypto-shred.test.js` creates an encrypted document with `encryptEnvelope`, invokes `shredDek(dekId)` in `runtime/crypto/shred.js`, verifies zero-fill of key memory, asserts `dekTombstones.has(dekId) === true`, and asserts that `decryptEnvelope` throws `ErrDekShredded`.
-
-### Issue 2: `feat(kernel): process signed shred-dek transactions and update vault tombstone records`
-- **Title:** Process signed shred-dek transactions in kernel and enforce DEK key deletion across vault replicas
-- **Roadmap Line:** `docs/ROADMAP-V1.md` Part 2 (Gate Condition 5: Cryptographic DEK destruction) & Part 3 (Wave 2)
-- **Primary Source Citation:** Regulation (EU) 2016/679 (GDPR) Article 17; GoBD § 3.2.1
-- **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
-- **Labels:** `ready`, `area:runtime`, `p1`
-- **Verification Method:** Unit test in `test/kernel-shred-transaction.test.js` submits a signed `shred-dek` transaction to `kernel.perform()`, asserts that the transaction commits to Git history without altering prior object hashes, and verifies that the target DEK is removed from `kernel.vault`.
+1. **Group Encryption Key Management & Envelope Cryptography:** Foundational group key management (epoch secret derivation, KEK wrap/unwrap in `runtime/crypto/envelope.js`, and peer vault DEK storage) must land first to provide the envelope encryption layer that this shredding protocol targets.
+2. **Open GitHub Issue Creation:** Corresponding GitHub issues for DEK zero-sweep runtime routines (`runtime/crypto/shred.js`) and kernel `shred-dek` transaction handling must be filed as open issues on GitHub with issue numbers (`#N`) so subsequent engineering sessions can claim implementation via `Closes #N`.
