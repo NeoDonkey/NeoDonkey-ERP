@@ -3,7 +3,7 @@
 Read this before starting work. Rewrite it before finishing. It is the first file anyone opens,
 so it is the one that has to be true.
 
-**Updated:** 2026-08-19
+**Updated:** 2026-08-20
 
 ---
 
@@ -72,6 +72,9 @@ Decision records in `docs/decisions/` have been updated with concrete, `ready` i
 7. **EU One-Stop Shop (OSS) VAT (`docs/decisions/2026-08-17-oss-one-stop-shop-eu-vat-schema-and-thresholds.md`)**:
    - `feat(vat): enforce EU cross-border B2C €10,000 OSS threshold aggregation and destination rate switching` (`area:runtime`, `p1`, `ready`)
    - `feat(vat): aggregate quarterly Union OSS VAT return data grouped by EU member state` (`area:runtime`, `p1`, `ready`)
+8. **GoBD Verfahrensdokumentation & Code Cross-References (`docs/decisions/2026-08-20-gobd-verfahrensdokumentation-and-auditor-verification.md`)**:
+   - `docs(gobd): write Verfahrensdokumentation cross-referencing GoBD requirements to runtime code paths` (`area:docs`, `p1`, `ready`)
+   - `test(gobd): add automated Verfahrensdokumentation link and code-reference integrity test` (`area:tests`, `p1`, `ready`)
 
 Filed open issues (#81, #82, #83, #84) can be claimed immediately by engineering sessions. Additional defined issue specifications above will be claimable as soon as filed as open GitHub issues.
 
