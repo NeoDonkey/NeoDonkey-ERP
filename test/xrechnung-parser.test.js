@@ -137,6 +137,31 @@ test('parseXRechnungUblXml rejects missing mandatory Business Terms with explici
     () => parseXRechnungUblXml(xmlNoBt31),
     (err) => err instanceof ValidationError && err.code === 'missing-bt-31'
   );
+
+  // Missing BT-129 InvoicedQuantity
+  const xmlNoBt129 = SAMPLE_VALID_UBL_XML.replace('<cbc:InvoicedQuantity unitCode="HUR">10</cbc:InvoicedQuantity>', '');
+  assert.throws(
+    () => parseXRechnungUblXml(xmlNoBt129),
+    (err) => err instanceof ValidationError && err.code === 'missing-bt-129'
+  );
+
+  // Missing BT-146 Item Price
+  const xmlNoBt146 = SAMPLE_VALID_UBL_XML.replace('<cbc:PriceAmount currencyID="EUR">500.00</cbc:PriceAmount>', '');
+  assert.throws(
+    () => parseXRechnungUblXml(xmlNoBt146),
+    (err) => err instanceof ValidationError && err.code === 'missing-bt-146'
+  );
+});
+
+test('parseXRechnungUblXml parses large BigInt quantities without double precision loss', () => {
+  const largeQtyStr = '9007199254740993'; // 2^53 + 1 (exceeds MAX_SAFE_INTEGER)
+  const xmlLargeQty = SAMPLE_VALID_UBL_XML.replace(
+    '<cbc:InvoicedQuantity unitCode="HUR">10</cbc:InvoicedQuantity>',
+    `<cbc:InvoicedQuantity unitCode="HUR">${largeQtyStr}</cbc:InvoicedQuantity>`
+  );
+
+  const result = parseXRechnungUblXml(xmlLargeQty);
+  assert.equal(result.lines[0].quantity, 9007199254740993n);
 });
 
 test('parseXRechnungUblXml rejects mismatched total arithmetic with ValidationError', () => {

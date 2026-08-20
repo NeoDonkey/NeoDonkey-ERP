@@ -99,6 +99,29 @@ function parseMoney(amountStr, currency, fieldName) {
 }
 
 /**
+ * Parses decimal or integer string to exact BigInt integer units without JS double precision loss.
+ *
+ * @param {string} qtyStr
+ * @param {string} fieldName
+ * @returns {bigint}
+ */
+function parseBigIntQuantity(qtyStr, fieldName) {
+  if (!qtyStr || typeof qtyStr !== 'string') {
+    throw new ValidationError('missing-bt-129', `Missing mandatory Business Term BT-129 (InvoicedQuantity) for ${fieldName}`);
+  }
+  const trimmed = qtyStr.trim();
+  if (!/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    throw new ValidationError('invalid-quantity', `Invalid quantity decimal format for ${fieldName}: '${qtyStr}'`);
+  }
+  const wholePart = trimmed.split('.')[0];
+  try {
+    return BigInt(wholePart);
+  } catch {
+    throw new ValidationError('invalid-quantity', `Could not parse BigInt quantity for ${fieldName}: '${qtyStr}'`);
+  }
+}
+
+/**
  * Parses and validates an EN 16931 UBL 2.1 XML invoice string into a structured domain object.
  *
  * @param {string} xmlText
@@ -180,28 +203,36 @@ export function parseXRechnungUblXml(xmlText) {
   for (let i = 0; i < lineSections.length; i++) {
     const lineSec = lineSections[i];
     const lineId = extractTagValue(lineSec, 'cbc:ID') || String(i + 1);
-    const quantityStr = extractTagValue(lineSec, 'cbc:InvoicedQuantity');
-    const parsedQty = quantityStr != null && !isNaN(Number(quantityStr)) ? Math.trunc(Number(quantityStr)) : 1;
 
+    // BT-129: Invoiced Quantity (mandatory)
+    const quantityStr = extractTagValue(lineSec, 'cbc:InvoicedQuantity');
+    const quantity = parseBigIntQuantity(quantityStr, `line ${lineId}`);
+
+    // BT-131: Line Net Amount (mandatory)
     const lineAmountStr = extractTagValue(lineSec, 'cbc:LineExtensionAmount');
     if (!lineAmountStr) {
       throw new ValidationError('missing-bt-131', `Missing mandatory Business Term BT-131 (Line Net Amount) for line ${lineId}`);
     }
     const lineNetAmount = parseMoney(lineAmountStr, currency, `Line ${lineId} Net Amount (BT-131)`);
 
+    // BT-153: Item Name (mandatory)
     const itemSection = extractSection(lineSec, 'cac:Item');
     const itemName = itemSection ? extractTagValue(itemSection, 'cbc:Name') : null;
     if (!itemName) {
       throw new ValidationError('missing-bt-153', `Missing mandatory Business Term BT-153 (Item Name) for line ${lineId}`);
     }
 
+    // BT-146: Item Net Price (mandatory)
     const priceSection = extractSection(lineSec, 'cac:Price');
     const priceAmountStr = priceSection ? extractTagValue(priceSection, 'cbc:PriceAmount') : null;
-    const itemPrice = priceAmountStr ? parseMoney(priceAmountStr, currency, `Line ${lineId} Item Price (BT-146)`) : lineNetAmount;
+    if (!priceAmountStr) {
+      throw new ValidationError('missing-bt-146', `Missing mandatory Business Term BT-146 (Item Price Amount) for line ${lineId}`);
+    }
+    const itemPrice = parseMoney(priceAmountStr, currency, `Line ${lineId} Item Price (BT-146)`);
 
     lines.push({
       lineId,
-      quantity: BigInt(parsedQty),
+      quantity,
       lineNetAmount,
       itemName,
       itemPrice
