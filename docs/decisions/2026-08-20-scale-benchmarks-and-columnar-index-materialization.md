@@ -37,7 +37,7 @@ NeoDonkey's core promise is that a company lives inside a Git repository without
 ### Key Architecture Decisions
 
 1. **Columnar Typed Array Projection Indexing:**
-   - Move from JS object-per-document pointer graphs to dense TypedArray structures (`BigInt64Array` for monetary values in minor units, `Int32Array` for Unix epoch timestamps/dates).
+   - Move from JS object-per-document pointer graphs to dense TypedArray structures (`BigInt64Array` for monetary values in minor units, `Int32Array` for Unix epoch timestamps/dates) within `runtime/read/index.js` and `runtime/read/query.js`.
    - Filter operations walk compact TypedArrays sequentially in memory before materializing full JS document objects.
    - Per-document memory footprint on indexed fields is reduced from ~415 B down to ~12 B.
 
@@ -46,20 +46,14 @@ NeoDonkey's core promise is that a company lives inside a Git repository without
    - Full document parsing and POLISM entity materialization occur asynchronously on demand only for matching result sets (`where()`, `get()`).
 
 3. **Geometric Packfile Repacking:**
-   - Implement geometric repacking (`--geometric 2`) to limit packfile proliferation.
+   - Implement geometric repacking (`--geometric 2`) in `runtime/git/pack.js` to limit packfile proliferation.
    - When loose objects or small packfiles accumulate, repacking merges smaller packs into geometrically larger packs ($2^0, 2^1, 2^2, \dots$), keeping total pack count bounded under geometric thresholds.
-
----
-
-## What Must Land First
-
-This decision record depends on the core Git packfile v2 storage layer (`runtime/git/pack.js`, `runtime/git/store.js`) and POLISM index infrastructure (`runtime/index/`). Implementation of the issue specifications below builds directly on top of these primitives.
 
 ---
 
 ## Unblocked Issue Specifications
 
-The following two concrete, `ready` issue specifications are defined and unblocked by this decision record:
+This decision record has no unlanded technical prerequisites and directly defines two unblocked `ready` issue specifications below for implementation once filed as GitHub issues:
 
 ### Issue Specification 1: Columnar Projection Typed Arrays & Lazy Materialization
 
@@ -68,7 +62,7 @@ The following two concrete, `ready` issue specifications are defined and unblock
 - **Decision Record:** `docs/decisions/2026-08-20-scale-benchmarks-and-columnar-index-materialization.md`
 - **Labels:** `area:runtime`, `p1`, `ready`
 - **Description:**
-  Implement dense columnar typed array indexing (`BigInt64Array` for minor monetary units, `Int32Array` for date timestamps) under `runtime/index/` and adapt the read path (`runtime/index/reader.js` or `runtime/kernel/index.js`) to perform lazy document materialization.
+  Implement dense columnar typed array indexing (`BigInt64Array` for minor monetary units, `Int32Array` for date timestamps) within `runtime/read/index.js` and `runtime/read/query.js` to perform lazy document materialization.
 - **Verification Criteria:**
   `npm test` executes `test/columnar-index.test.js`, asserting:
   1. Index initialization over 100,000 synthetic records uses contiguous `BigInt64Array` buffer allocation with <2 MB memory footprint.
@@ -87,6 +81,6 @@ The following two concrete, `ready` issue specifications are defined and unblock
 - **Description:**
   Create an automated scale benchmarking test suite `test/benchmark-scale.test.js` executed via Node's native test runner (`node --test`) to measure system performance against Gate Condition 7 targets: Git object packfile integrity and document read path materialization/query performance.
 - **Verification Criteria:**
-  `node --test test/benchmark-scale.test.js` executes micro-benchmarks with scaled sampling (10,000 synthetic objects by default during standard test runs to complete within <5 s, scaling to 10M via `BENCHMARK_SCALE=1` environment variable), verifies `git fsck --strict` cleanliness, asserts geometric repacking bounds (<50 pack files), and outputs deterministic structural memory and allocation metrics.
+  `node --test test/benchmark-scale.test.js` executes micro-benchmarks with scaled sampling (10,000 synthetic objects by default during standard test runs to complete within <5 s, scaling to 10M via `BENCHMARK_SCALE=1` environment variable), verifies `git fsck --strict` cleanliness, asserts geometric repacking bounds (<50 pack files), and asserts zero memory leaks across GC cycles.
 - **Non-Negotiable Constraints:**
   Zero third-party test dependencies, runs under Node's native test runner (`node --test`), default standard test execution completes in under 5 seconds without memory spikes or CI timeouts, deterministic metrics reporting.
