@@ -1,4 +1,4 @@
-# Decision Record: Bank Statement Ingestion (CAMT.053 ISO 20022 XML / MT940 SWIFT) and Automated Payment Reconciliation (OPOS)
+# Decision Record: Bank Statement Ingestion (CAMT.053 ISO 20022 XML / MT940 SWIFT) and Automated Payment Reconciliation
 
 **Date:** 2026-08-20
 **Author:** Daniel Pammé
@@ -9,7 +9,7 @@
 
 ## Question
 
-How should NeoDonkey ingest, parse, and convert electronic bank statement files (ISO 20022 `camt.053` XML and SWIFT MT940) into canonical bank transaction domain objects, and how are incoming bank payments automatically reconciled against open Accounts Receivable / Accounts Payable (AR/AP OPOS) items in the general ledger while adhering to strict zero-float monetary rules and GoBD auditability constraints?
+How should NeoDonkey ingest, parse, and convert electronic bank statement files (ISO 20022 `camt.053` XML and SWIFT MT940) into canonical bank transaction domain objects, and how are incoming bank payments mapped to Accounts Receivable / Accounts Payable (AR/AP OPOS) open items while adhering to strict zero-float monetary rules and GoBD auditability constraints?
 
 ---
 
@@ -39,22 +39,19 @@ How should NeoDonkey ingest, parse, and convert electronic bank statement files 
    - Amounts are parsed directly as strings into minor unit `BigInt` values (`1250.50 EUR` → `125050n EUR`) using `toMoney(rawString, currency)`.
    - Debit entries (`DBIT` / `D`) carry negative sign or are classified as outgoing cash disbursements; Credit entries (`CRDT` / `C`) are classified as incoming customer receipts.
 
-### 3. Automated Open Item (OPOS) Reconciliation Rules
-Incoming bank payments (`CRDT`) are matched against open Accounts Receivable items (`customer-invoice` documents in `unpaid` state) using a multi-tiered matching engine:
-1. **Tier 1 — Exact Reference Match (100% Confidence):**
-   - Matching `RmtInf/Strd/CdtrRefInf/Ref`, `EndToEndId`, or exact invoice number string found in `RmtInf/Ustrd` matching an open invoice's `document-number` (e.g. `INV-2026-0042`), AND bank transaction amount equals invoice gross amount (`gross-amount`).
-   - Outcome: Automatically matched and queued for single-click or automatic posting.
-2. **Tier 2 — Exact Amount & Counterparty Name Match:**
-   - Unstructured remittance text contains customer name (`Dbtr/Nm`) AND exact open invoice gross amount.
-   - Outcome: Matched with high confidence.
-3. **Tier 3 — Partial Payment / Skonto Cash Discount Handling:**
-   - Payment amount is less than gross invoice amount, but matches net/gross amount minus allowable Skonto discount (e.g., 2% discount within 14 days per invoice terms).
-   - Outcome: Matched as paid with Skonto. Ledger entry automatically splits payment into cash receipt and Skonto cash discount expense (`8736` SKR03 / `4736` SKR04) with proportional output VAT adjustment.
-4. **Unmatched / Ambiguous Refusal:**
-   - If multiple open invoices match or amount does not match any open item within Skonto tolerance, the entry is marked `unreconciled`. It MUST NOT be guess-posted automatically.
+### 3. XML Field Mapping to Open Item (OPOS) Reconciliation Tiers
+General subledger OPOS payment matching, full/partial clearing lifecycle, Skonto cash discount adjustments, and proportional VAT calculations are governed by decision record `docs/decisions/2026-08-19-ar-ap-subledger-and-open-item-opos-accounting.md`. For bank statement ingestion specifically, incoming bank transactions (`CRDT`) are mapped to open subledger items via the following XML-field hierarchy:
+1. **Tier 1 — Exact Structured Reference Match (100% Confidence):**
+   - Matches structured remittance information (`RmtInf/Strd/CdtrRefInf/Ref`), SEPA `EndToEndId`, or `UETR` against open item document numbers (e.g. `INV-2026-0042`).
+2. **Tier 2 — Unstructured Text & Counterparty Match:**
+   - Extracts invoice number patterns from unstructured text (`RmtInf/Ustrd`) combined with debtor name (`Dbtr/Nm`) matching customer subledger records.
+3. **Subledger Clearing Execution:**
+   - On match, delegates payment clearing, partial payment handling, and Skonto/VAT adjustment posting directly to the subledger rules defined in `2026-08-19-ar-ap-subledger-and-open-item-opos-accounting.md`.
+4. **Ambiguity Refusal:**
+   - If multiple open invoices match or amount does not match any open item within allowable Skonto tolerance, the statement entry is flagged `unreconciled` for manual user resolution. Automatic speculative posting is forbidden.
 
 ### 4. Idempotency & Duplicate Prevention
-1. Each bank entry is assigned a canonical fingerprint: `sha256(IBAN + booking_date + transaction_reference + amount_minor_units)`.
+1. Each bank statement transaction is assigned a canonical fingerprint: `sha256(IBAN + booking_date + transaction_reference + amount_minor_units)`.
 2. The transaction fingerprint is stored in the general ledger transaction metadata. Re-importing the same CAMT.053 XML or MT940 file skips already-ingested transaction fingerprints without throwing errors or duplicating ledger postings.
 
 ---
@@ -72,9 +69,17 @@ Incoming bank payments (`CRDT`) are matched against open Accounts Receivable ite
 
 ---
 
+## What Would Have to Change for the Answer to Change
+
+1. **ISO 20022 Standard Supercession:** If EPC or ISO deprecates `camt.053` in favor of a newer statement schema (e.g. `camt.053.001.10+`), the XML element paths in §1 would need updating.
+2. **SEPA / EBICS Mandate Changes:** If tax authorities or banking networks mandate real-time API push webhooks (e.g., Open Banking / PSD3 JSON APIs) over file-based CAMT statements, an additional JSON parser dialect would be required alongside `camt.053`.
+3. **Subledger Matching Rules:** If the underlying AR/AP subledger OPOS rules in `docs/decisions/2026-08-19-ar-ap-subledger-and-open-item-opos-accounting.md` change regarding Skonto or VAT adjustments under German tax law (UStG § 17), the clearing execution in §3 would adapt to the updated subledger decision record.
+
+---
+
 ## What Must Land First
 
-This decision record defines 2 implementable issue specifications below. Filing these specifications as open GitHub issues MUST land first before implementation work can be claimed via `Closes #N` in an engineering session.
+This decision record defines 2 implementable issue specifications below. Filing these specifications as open GitHub issues (by a maintainer or issue-creation automation) MUST land first before implementation work can be claimed via `Closes #N` in an engineering session.
 
 ---
 
@@ -89,10 +94,10 @@ This decision record defines 2 implementable issue specifications below. Filing 
 
 ### Issue Specification 2
 - **Title:** `feat(bank): match bank statement transactions to AR/AP open items (OPOS) and generate ledger payment clearing entries`
-- **Source:** Decision record `docs/decisions/2026-08-20-camt053-bank-statement-ingestion-and-payment-reconciliation.md` §3 & §4, `docs/ROADMAP-V1.md` Wave 2 / Wave 3
+- **Source:** Decision record `docs/decisions/2026-08-20-camt053-bank-statement-ingestion-and-payment-reconciliation.md` §3 & §4, `docs/ROADMAP-V1.md` Wave 2 / Wave 3, `docs/decisions/2026-08-19-ar-ap-subledger-and-open-item-opos-accounting.md`
 - **Verification:** `node --test test/bank-reconciliation.test.js` passes. A test feeds parsed bank statement credit entries into the reconciliation engine against a set of open sales invoices (`unpaid`). The test asserts:
   1. An exact remittance reference match generates a balanced general ledger posting (Debit Bank `1200`, Credit Receivable `1400`) and updates open item status to `cleared`.
-  2. A payment with a valid 2% Skonto discount generates a compound clearing entry splitting bank receipt, Skonto expense (`8736`), and output VAT adjustment, balancing debits and credits exactly.
+  2. A payment with a valid 2% Skonto discount generates a compound clearing entry splitting bank receipt, Skonto expense (`8736`), and output VAT adjustment per `2026-08-19-ar-ap-subledger-and-open-item-opos-accounting.md`, balancing debits and credits exactly.
   3. Re-ingesting a statement entry with an identical transaction fingerprint is rejected as a duplicate (`idempotent-duplicate-refused`).
 - **Labels:** `area:runtime`, `p1`, `ready`
 - **Non-Negotiable Constraints:** Zero dependencies, no build step, browser-compatible ES module, no `parseFloat`/`Number` on monetary paths, debits equal credits invariant preserved in generated ledger entries.
