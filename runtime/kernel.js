@@ -2971,6 +2971,20 @@ function indexOfBlankLine(bytes) {
  * `strictAuthorization` contradicting the record is refused rather than quietly overruled: a
  * silent disagreement about a security setting is the exact class of defect #4c-bis was.
  */
+/** Canonical form of a `sealed` table: entity keys sorted, each group list sorted.
+ * Two tables that mean the same thing must compare equal regardless of the order
+ * the caller wrote them in — the record is the truth, not the spelling.
+ * @param {Record<string, string[]>} table
+ */
+function normalizeSealedTable(table) {
+  const out = {};
+  for (const entity of Object.keys(table ?? {}).sort()) {
+    const groups = table[entity];
+    out[entity] = Array.isArray(groups) ? [...groups].sort() : groups;
+  }
+  return out;
+}
+
 function readSettings(files, options) {
   const bytes = files.get(PATHS.settings);
   let recorded = null;
