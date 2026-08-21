@@ -53,8 +53,8 @@ silent-plaintext direction the comment in `readSettings` describes.
 - The new tests fail on un-patched main: 3 of 4 (the fourth, "honest read path", passes by
   construction — it describes behaviour the fix must not change).
 - Full suite on this tree (`node --test --test-concurrency=2 "test/*.test.js"`, Node 22):
-  708 tests, 706 pass, 0 fail, 2 skipped (the two pre-existing env-gated skips). Baseline main
-  before this change: 704 tests, 702 pass, 0 fail, 2 skipped.
+  737 tests, 735 pass, 0 fail, 2 skipped (the two pre-existing env-gated skips). Baseline main
+  before this change: 733 tests, 731 pass, 0 fail, 2 skipped.
 
 ## Performance note
 
