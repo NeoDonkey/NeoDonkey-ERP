@@ -119,7 +119,9 @@ export async function buildDatevExtf({
 
     const postings = kernel.query.select({
       from: 'posting',
-      where: { 'journal-entry': { op: 'is', value: [entry.id] } },
+      // The kernel's query language (runtime/read/query.js) has no "is" operator;
+      // "in" with a one-element array is the supported way to match a reference.
+      where: { 'journal-entry': { op: 'in', value: [entry.id] } },
       orderBy: 'position',
     });
 

@@ -94,7 +94,9 @@ function makeMockKernel(docs) {
           if (where['journal-entry']) {
             const op = where['journal-entry'].op;
             const values = where['journal-entry'].value || [];
-            if (op === 'is') {
+            // Mirrors runtime/read/query.js: "in" is the operator the real kernel
+            // supports for matching a reference against a list of ids.
+            if (op === 'in') {
               rows = rows.filter((r) => values.includes(r['journal-entry']));
             }
           }
