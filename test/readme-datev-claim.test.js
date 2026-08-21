@@ -49,3 +49,29 @@ test('README names what the DATEV exporter actually ships today', () => {
     'the DATEV paragraph must name what is actually shipped (the EXTF v700 header), '
     + 'not imply that complete serialization exists');
 });
+
+// The same sentence once read "with 9 passing tests" while the DATEV test files held ten.
+// A hardcoded sub-suite count drifts on every DATEV test added, and prose counts are exactly
+// what #55/#64 removed from documentation because they make every test-adding PR conflict
+// with every other. documented-counts.test.js cannot see this case by design — its regex
+// requires three digits so version numbers do not register — so the DATEV claim file guards
+// its own sentence.
+test('README does not hardcode a DATEV test count', () => {
+  const m = readme.match(/\b\d+\s+passing\s+tests\b/);
+  assert.equal(m, null,
+    'README.md states "' + (m ? m[0] : '') + '" as a literal. A sub-suite count in prose drifts '
+    + 'every time a DATEV test is added (it said 9 while the files hold 10) and causes the '
+    + 'merge conflicts that removed suite totals from prose (#55, #64). Point at '
+    + 'test/datev-*.test.js instead of counting it.');
+});
+
+// If the booking-line serializer ever leaves runtime/export/, the README may not keep saying
+// the serializer ships "booking lines" — the same gate the strong-claim test applies to the
+// older wording, extended to the current one.
+test('README claims booking lines only while a booking-line serializer exists', () => {
+  if (bookingLineSerializerExists()) return;
+
+  assert.ok(!/full header,\s*\n?\s*booking lines/.test(readme),
+    'README.md says the DATEV serializer ships "the full header, booking lines" but no module '
+    + 'in runtime/export/ emits a booking line any more. Qualify or drop the claim.');
+});
