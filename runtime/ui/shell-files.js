@@ -1,4 +1,4 @@
-// runtime/ui/shell-files.js — what "the runtime" consists of, as data.
+// runtime/ui/shell-files.js - what "the runtime" consists of, as data.
 //
 // Two things need this list and must never disagree about it:
 //   • service-worker.js, to precache the shell so the app works offline / air-gapped
@@ -17,7 +17,7 @@
 //
 // EVERY PATH IS RELATIVE. Not one leading slash, anywhere in the PWA. That is what lets this
 // run unchanged from https://neodonkey.eu/, from https://erp.somecompany.de/neodonkey/ and from
-// http://localhost:8080/ — see docs/_compromise-ui.md on why origin-independence is the whole
+// http://localhost:8080/ - see docs/_compromise-ui.md on why origin-independence is the whole
 // argument that neodonkey.eu is a convenience and not an authority.
 
 /** Must match `version` in package.json. Asserted by test/g-ui.test.js. */
@@ -34,6 +34,7 @@ export const SHELL = [
   './',
   'index.html',
   'manifest.webmanifest',
+  'runtime/ui/tokens.css',
   'runtime/ui/style.css',
   'runtime/ui/icon.svg',
   'runtime/ui/icon-maskable.svg',
@@ -75,6 +76,7 @@ export const SHELL = [
   'runtime/ui/fields.js',
   'runtime/ui/forms.js',
   'runtime/ui/kernel-gaps.js',
+  'runtime/ui/keys.js',
   'runtime/ui/pwa.js',
   'runtime/ui/render.js',
   'runtime/ui/shell-files.js',
@@ -84,5 +86,5 @@ export const SHELL = [
   'runtime/ui/views.js',
 ];
 
-/** The executable part — what "verify this runtime" hashes. `./` and `.css` are not code. */
+/** The executable part - what "verify this runtime" hashes. `./` and `.css` are not code. */
 export const CODE = SHELL.filter((p) => p.endsWith('.js'));

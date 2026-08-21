@@ -1,4 +1,4 @@
-// service-worker.js — offline delivery of the runtime. A classic worker, no dependencies.
+// service-worker.js - offline delivery of the runtime. A classic worker, no dependencies.
 //
 // It must sit next to index.html so that its scope is the app directory: registered as
 // `./service-worker.js`, it controls `https://erp.somecompany.de/neodonkey/` just as well as
@@ -8,13 +8,13 @@
 //
 //  1. It never calls skipWaiting() by itself. A new version waits until the user says yes
 //     (`{type:'skip-waiting'}` from the page). Appendix I's promise is that the accountant can
-//     run version 2 while the warehouse still runs version 1 and both exchange the same facts —
+//     run version 2 while the warehouse still runs version 1 and both exchange the same facts,
 //     an update that installs itself while someone is booking a pallet contradicts that
 //     directly. "Update equals file replacement" (Appendix II) must still be the *user's* act.
 //
 //  2. It never touches the user's data. The company lives in OPFS or in a folder the user
 //     picked; neither is HTTP, so neither can pass through here. Requests this worker does not
-//     recognise are left entirely alone — no respondWith, no opinion.
+//     recognise are left entirely alone - no respondWith, no opinion.
 //
 //  3. It caches by exact URL from an explicit list. No wildcard, no "cache everything you see".
 //     A stale module silently served from a wildcard cache is the kind of failure that makes
@@ -30,6 +30,7 @@ const SHELL = [
   './',
   'index.html',
   'manifest.webmanifest',
+  'runtime/ui/tokens.css',
   'runtime/ui/style.css',
   'runtime/ui/icon.svg',
   'runtime/ui/icon-maskable.svg',
@@ -71,6 +72,7 @@ const SHELL = [
   'runtime/ui/fields.js',
   'runtime/ui/forms.js',
   'runtime/ui/kernel-gaps.js',
+  'runtime/ui/keys.js',
   'runtime/ui/pwa.js',
   'runtime/ui/render.js',
   'runtime/ui/shell-files.js',
@@ -84,12 +86,12 @@ const SHELL = [
 const shellUrls = () => SHELL.map((p) => new URL(p, self.registration.scope).href);
 
 // ---------------------------------------------------------------------------------------------
-// RULE 4 — nothing enters the cache unverified.
+// RULE 4 - nothing enters the cache unverified.
 //
 // The origin that serves this code could change it. A signature is the only structural answer
 // (docs/ARCHITECTURE.md D11, COMPROMISES #8/#15), and it is split across two places for a
 // platform reason, not a design preference: a *classic* worker cannot import an ES module, so it
-// cannot verify an Ed25519 signature. Therefore —
+// cannot verify an Ed25519 signature. Therefore:
 //
 //   the page   verifies the signed manifest (it is a module, it has runtime/release/*.js)
 //   the worker enforces a flat {url: sha256} table with crypto.subtle.digest
@@ -111,17 +113,17 @@ async function releaseTable() {
   return relTable;
 }
 
-/** Returns the response, or throws. A throw refuses the install — the safe state is stopped. */
+/** Returns the response, or throws. A throw refuses the install - the safe state is stopped. */
 async function checkRelease(url, res) {
   const table = await releaseTable();
-  if (!table) return res; // not yet pinned — COMPROMISES #15, residual risk 4
+  if (!table) return res; // not yet pinned - COMPROMISES #15, residual risk 4
   if (!table[url]) throw new Error(`release: unlisted file ${url}`);
   const digest = relHex(await crypto.subtle.digest('SHA-256', await res.clone().arrayBuffer()));
   if (digest !== table[url]) throw new Error(`release: hash mismatch ${url}`);
   return res;
 }
 
-// The operating model that ships next to the code. Repo content, not user data — safe and
+// The operating model that ships next to the code. Repo content, not user data - safe and
 // useful to cache, so a first run works offline too. Network first, so a `git pull` shows up.
 const isRepoContent = (url) => url.pathname.includes('/operating-model/') && url.pathname.endsWith('.md');
 const isFileIndex = (url) => url.pathname.endsWith('/_files') || url.pathname.endsWith('_files');
@@ -173,7 +175,7 @@ self.addEventListener('message', (event) => {
       relTable = event.data.table;
 
       // The very first install filled the cache before any table existed. Re-check it now, or
-      // that install's bytes stay unverified forever — and "unverified once, trusted always"
+      // that install's bytes stay unverified forever - and "unverified once, trusted always"
       // would make the whole mechanism decorative.
       const cache = await caches.open(CACHE_NAME);
       for (const url of shellUrls()) {
@@ -213,7 +215,7 @@ self.addEventListener('fetch', (event) => {
   const inShell = shellUrls().includes(url.href);
   if (inShell) {
     // Cache first: the shell is immutable for a given VERSION. On a miss we must still not hand
-    // over bytes nobody checked — the `?? fetch(req)` fallback was the last unverified path in.
+    // over bytes nobody checked - the `?? fetch(req)` fallback was the last unverified path in.
     event.respondWith((async () => {
       const cache = await caches.open(CACHE_NAME);
       const cached = await cache.match(url.href);
@@ -239,6 +241,6 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Everything else: no opinion. Rule 2 — this is where the user's workspace would be, if it
+  // Everything else: no opinion. Rule 2 - this is where the user's workspace would be, if it
   // ever came over HTTP, and it must pass through untouched.
 });
