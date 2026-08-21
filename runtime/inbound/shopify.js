@@ -58,7 +58,11 @@
  *     recorded on the invoice document and posted as the receivable leg. The subledger account is
  *     derived deterministically from the Shopify customer id inside the caller-supplied band, and
  *     collisions between two customers are resolved by probing the read index for the next free
- *     number — deterministic given the same history, never guessed.
+ *     number — deterministic given the same history, never guessed. If a replay arrives with a
+ *     status changed from unpaid to paid, the payment document is committed (completion) — and the
+ *     already-committed invoice is NOT rewritten: its open-item records the state at ingestion,
+ *     and clearing that item is the ar-ap process's event, owned by the 2026-08-19 ar-ap record,
+ *     not something a webhook replay edits retroactively.
  *
  * Ingestion commits through the real kernel path — `kernel.perform` — so every order arrives as
  * signed, rule-checked commits, and with an injected clock the same foreign event produces a
@@ -315,13 +319,17 @@ function fail(code, message) {
   throw new InboundError(code, message);
 }
 
-/** A count, never a float: BigInt from an integer JSON number or a decimal string. */
+/** A count, never a float: BigInt from a positive-integer JSON number or a decimal string. */
 function toCount(value, field) {
-  if (typeof value === 'string' && /^\d+$/.test(value)) return BigInt(value);
-  if (typeof value === 'number') {
-    try { return BigInt(value); } catch { /* falls through to the refusal */ }
+  let parsed = null;
+  if (typeof value === 'string' && /^\d+$/.test(value)) parsed = BigInt(value);
+  else if (typeof value === 'number') {
+    try { parsed = BigInt(value); } catch { /* falls through to the refusal */ }
   }
-  return fail('bad-quantity', `${field}: quantity must be a whole number, got ${JSON.stringify(value)}`);
+  if (parsed === null || parsed <= 0n) {
+    return fail('bad-quantity', `${field}: quantity must be a positive whole number, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
 }
 
 /** REST wraps its payload in `{ order: … }`; GraphQL does not. Accept both, detect the dialect. */
@@ -447,7 +455,6 @@ export function normalizeOrder(payload, options = {}) {
   const lines = rawLineItems(raw).map((li, i) => {
     const field = `line_items[${String(i)}]`;
     const quantity = toCount(li.quantity, `${field}.quantity`);
-    if (quantity === 0n) fail('bad-quantity', `${field}.quantity is zero — nothing to invoice`);
     const unitMinor = parseShopifyMinor(lineUnitPriceValue(li, graphql), currency, `${field}.price`);
     return {
       title: String(li.title ?? li.name ?? `line ${String(i + 1)}`),
@@ -697,6 +704,16 @@ export function orderToDocuments(order, resolved) {
     }
     match[0].taxMinor += tl.taxMinor;
   }
+  // A group with tax to post but a treatment that names no output-VAT account would drop the VAT
+  // leg silently: debit customer gross, credit revenue net, unbalanced by exactly the tax, while
+  // the invoice still shows the VAT amount. "Empty where zero rated" (the model's own note on
+  // output-vat-account-number) is for zero-rated treatments — this one is not. Loud refusal.
+  for (const g of groups.values()) {
+    if (g.taxMinor !== 0n && g.vatAccount === null) {
+      fail('treatment-accounts-undetermined',
+        `the vat-treatment '${g.treatment}' names no output-vat-account-number, but ${moneyToken(g.taxMinor, currency)} of tax at ${g.ratePercent} % must be posted somewhere. Fill the account in at adoption — the dialect never drops a VAT leg.`);
+    }
+  }
   const vatBreakdown = [...groups.values()]
     .sort((a, b) => (a.scaled > b.scaled ? -1 : a.scaled < b.scaled ? 1 : 0))
     .map((g) => ({
@@ -784,7 +801,7 @@ export function orderToDocuments(order, resolved) {
     'entry-date': order.orderDate,
     'document-date': order.orderDate,
     currency,
-    description: `${order.reference} — sale per ${order.reference.toLowerCase()}`,
+    description: `${order.reference} — webshop sale`,
     'source-document-type': 'sales-invoice',
     'source-document-reference': invoiceId,
     postings,
