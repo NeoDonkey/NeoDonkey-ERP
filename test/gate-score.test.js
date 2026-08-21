@@ -86,9 +86,12 @@ const CONDITIONS = [
   {
     number: 8,
     title: 'A German auditor\'s questions have written answers',
-    status: 'red',
-    evidence: [],
-    missing: 'Verfahrensdokumentation document cross-referenced to code locations.',
+    status: 'green',
+    evidence: [
+      'docs/VERFAHRENSDOKUMENTATION.md',
+      'test/verfahrensdok.test.js',
+    ],
+    missing: null,
     description: 'Verfahrensdokumentation covering GoBD requirements (Nachvollziehbarkeit, Unveränderbarkeit, Vollständigkeit, Zeitgerechtigkeit).',
   },
   {
@@ -97,7 +100,7 @@ const CONDITIONS = [
     status: 'red',
     evidence: [],
     missing: 'External security audit and red team penetration test report.',
-    description: 'External security audit and red team attempt to forge commits, bypass rules, unbalance ledger, or breach group encryption.',
+    description: 'External security audit and red team attempt to forge commits, bypass rules, unbalance the ledger, or breach group encryption.',
   },
   {
     number: 10,

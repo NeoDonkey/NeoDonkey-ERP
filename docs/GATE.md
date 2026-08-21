@@ -7,9 +7,9 @@ Generated and verified by `test/gate-score.test.js`. Do not edit by hand.
 
 ## Summary
 
-- **Green (Met):** 5 / 10
+- **Green (Met):** 6 / 10
 - **Partial:** 1 / 10
-- **Red (Unmet):** 4 / 10
+- **Red (Unmet):** 3 / 10
 
 ---
 
@@ -73,13 +73,13 @@ Published performance benchmarks for 10 M objects, 1 M documents materialisation
 
 **Missing:** 10 M object packfile benchmark, 1 M document read path benchmark, and published metrics.
 
-### Condition 8 — A German auditor's questions have written answers [RED]
+### Condition 8 — A German auditor's questions have written answers [GREEN]
 
 Verfahrensdokumentation covering GoBD requirements (Nachvollziehbarkeit, Unveränderbarkeit, Vollständigkeit, Zeitgerechtigkeit).
 
-**Evidence:** None
-
-**Missing:** Verfahrensdokumentation document cross-referenced to code locations.
+**Evidence:**
+- `docs/VERFAHRENSDOKUMENTATION.md`
+- `test/verfahrensdok.test.js`
 
 ### Condition 9 — An adversary tried [RED]
 
