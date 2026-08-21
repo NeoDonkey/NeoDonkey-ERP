@@ -62,12 +62,15 @@ function escapeXml(str) {
  * Serializes an aggregated USt-VA tax grid result into BMF ELSTER XML.
  *
  * @param {Object} options
- * @param {Object} options.header
+ * @param {Object} options.header Header metadata for submission
  * @param {string} options.header.finanzamtNummer 4-digit tax office ID (e.g. "9198")
- * @param {string} options.header.steuernummer 13-digit standard German tax ID (e.g. "1981150000501")
+ * @param {string} options.header.steuernummer 11 to 13-digit German tax ID (e.g. "1981150000501")
  * @param {string} options.header.jahr 4-digit year (e.g. "2026")
  * @param {string} options.header.zeitraum 2-digit month ("01".."12") or quarter ("41".."44")
- * @param {Object} [options.gridTotals]
+ * @param {string} [options.header.herstellerId] Registered software vendor ID issued by tax administration (default: "74931")
+ * @param {string} [options.header.datenLieferant] Software/data provider name (default: "NeoDonkey ERP")
+ * @param {string} [options.header.nutzdatenTicket] Transmission ticket ID (default: "1")
+ * @param {Object} [options.gridTotals] Aggregated tax grid totals
  * @param {bigint} [options.gridTotals.kz81NetMinor] Standard rate (19%) net base
  * @param {bigint} [options.gridTotals.kz81TaxMinor] Standard rate (19%) output VAT
  * @param {bigint} [options.gridTotals.kz86NetMinor] Reduced rate (7%) net base
@@ -82,7 +85,15 @@ export function serializeUstVaElsterXml({ header, gridTotals = {} }) {
     throw new Error('Missing required header parameter');
   }
 
-  const { finanzamtNummer, steuernummer, jahr, zeitraum } = header;
+  const {
+    finanzamtNummer,
+    steuernummer,
+    jahr,
+    zeitraum,
+    herstellerId = '74931',
+    datenLieferant = 'NeoDonkey ERP',
+    nutzdatenTicket = '1',
+  } = header;
 
   if (!finanzamtNummer || !/^\d{4}$/.test(finanzamtNummer)) {
     throw new Error('FinanzamtNummer must be 4 digits');
@@ -111,15 +122,15 @@ export function serializeUstVaElsterXml({ header, gridTotals = {} }) {
     '  <DatenTeil>',
     '    <Nutzdatenblock>',
     '      <NutzdatenHeader version="11">',
-    '        <NutzdatenTicket>1</NutzdatenTicket>',
+    `        <NutzdatenTicket>${escapeXml(nutzdatenTicket)}</NutzdatenTicket>`,
     '        <Empfaenger id="F">',
     '          <Ziel>ElsterAnmeldung</Ziel>',
     '        </Empfaenger>',
-    '        <HerstellerID>74931</HerstellerID>',
-    '        <DatenLieferant>NeoDonkey ERP</DatenLieferant>',
+    `        <HerstellerID>${escapeXml(herstellerId)}</HerstellerID>`,
+    `        <DatenLieferant>${escapeXml(datenLieferant)}</DatenLieferant>`,
     '      </NutzdatenHeader>',
     '      <Nutzdaten>',
-    '        <Anmeldesteuern>',
+    '        <Anmeldungssteuern>',
     '          <UStVA erstellungskosten="0">',
     `            <Jahr>${escapeXml(jahr)}</Jahr>`,
     `            <Zeitraum>${escapeXml(zeitraum)}</Zeitraum>`,
@@ -131,7 +142,7 @@ export function serializeUstVaElsterXml({ header, gridTotals = {} }) {
     `            <Kz66>${kz66TaxStr}</Kz66>`,
     `            <Kz83>${kz83TaxStr}</Kz83>`,
     '          </UStVA>',
-    '        </Anmeldesteuern>',
+    '        </Anmeldungssteuern>',
     '      </Nutzdaten>',
     '    </Nutzdatenblock>',
     '  </DatenTeil>',

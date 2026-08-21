@@ -16,11 +16,14 @@ How should NeoDonkey aggregate general ledger transactions for domestic German V
    - **Kz 83:** Remaining VAT payment or refund amount (Verbleibende Umsatzsteuer-Vorauszahlung / Erstattungsbetrag). Calculated as total output VAT (Kz 81 USt + Kz 86 USt) minus deductible input tax (Kz 66 Vorsteuer).
    - All amounts in Kz fields MUST be computed using BigInt minor units (e.g. cents) with commercial half-up rounding, with net base amounts formatted as truncated integer Euros for taxable sales per UStG § 18 Abs. 1 where required by ELSTER regulations.
 
-2. **ELSTER XML Structure (`<Anmeldesteuern>` / `<UStVA>`):**
+2. **ELSTER XML Structure (`<Anmeldungssteuern>` / `<UStVA>`):**
    - The USt-VA XML document MUST conform to the official BMF ELSTER XML schema specification (`http://www.elster.de/elsterxml/schema/v1`).
    - Root node `<Elster>` contains `<DatenTeil>` and `<Nutzdatenblock>`.
-   - The `<Nutzdaten>` section contains `<Anmeldesteuern>` with header attributes for financial office number (`FinanzamtNummer`, 4 digits), steuernummer (`Steuernummer`, 13 digits), tax year (`Jahr`, YYYY), and period (`Zeitraum`, MM or 41..44 for quarters).
+   - The `<Nutzdaten>` section contains `<Anmeldungssteuern>` with header attributes for financial office number (`FinanzamtNummer`, 4 digits), steuernummer (`Steuernummer`, 13 digits), tax year (`Jahr`, YYYY), and period (`Zeitraum`, MM or 41..44 for quarters).
    - Position elements MUST be serialized as `<Kz81>`, `<Kz86>`, `<Kz41>`, `<Kz66>`, `<Kz83>` with exact string-formatted decimal amounts.
+
+## Errata (2026-08-21)
+- Corrected section 2 element spelling from `<Anmeldesteuern>` to `<Anmeldungssteuern>` per BMF ERiC ELSTER XML schema XSD specification (`/Elster/DatenTeil/Nutzdatenblock/Nutzdaten/Anmeldungssteuern`).
 
 ## Source
 - **Primary Source (German Tax Law):** UStG (Umsatzsteuergesetz) § 18 Abs. 1 (Voranmeldungsverfahren), § 12 (Steuersätze), and § 15 (Vorsteuerabzug).

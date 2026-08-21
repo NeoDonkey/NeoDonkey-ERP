@@ -9,7 +9,6 @@ test('serializeUstVaElsterXml generates valid ELSTER XML structure with header a
     steuernummer: '1981150000501',
     jahr: '2026',
     zeitraum: '01',
-    creationDate: '20260201120000',
   };
 
   const gridTotals = {
@@ -28,13 +27,15 @@ test('serializeUstVaElsterXml generates valid ELSTER XML structure with header a
   assert.ok(xml.includes('<Elster xmlns="http://www.elster.de/elsterxml/schema/v1">'), 'Root Elster element with schema namespace');
   assert.ok(xml.includes('<DatenTeil>'), '<DatenTeil> section present');
   assert.ok(xml.includes('<Nutzdatenblock>'), '<Nutzdatenblock> section present');
-  assert.ok(xml.includes('<Anmeldesteuern>'), '<Anmeldesteuern> element present');
+  assert.ok(xml.includes('<Anmeldungssteuern>'), '<Anmeldungssteuern> element present per ERiC XSD');
 
   // Verify header attributes/elements
   assert.ok(xml.includes('<FinanzamtNummer>9198</FinanzamtNummer>'), 'FinanzamtNummer present');
   assert.ok(xml.includes('<Steuernummer>1981150000501</Steuernummer>'), 'Steuernummer present');
   assert.ok(xml.includes('<Jahr>2026</Jahr>'), 'Jahr present');
   assert.ok(xml.includes('<Zeitraum>01</Zeitraum>'), 'Zeitraum present');
+  assert.ok(xml.includes('<HerstellerID>74931</HerstellerID>'), 'Default HerstellerID present');
+  assert.ok(xml.includes('<DatenLieferant>NeoDonkey ERP</DatenLieferant>'), 'Default DatenLieferant present');
 
   // Verify Kz grid fields
   assert.ok(xml.includes('<Kz81>10000</Kz81>'), 'Kz81 present');
@@ -42,6 +43,24 @@ test('serializeUstVaElsterXml generates valid ELSTER XML structure with header a
   assert.ok(xml.includes('<Kz41>2000</Kz41>'), 'Kz41 present');
   assert.ok(xml.includes('<Kz66>400.00</Kz66>'), 'Kz66 Vorsteuer present as string decimal');
   assert.ok(xml.includes('<Kz83>1850.00</Kz83>'), 'Kz83 Tax payable present as string decimal');
+});
+
+test('serializeUstVaElsterXml accepts custom vendor and ticket headers', () => {
+  const header = {
+    finanzamtNummer: '9198',
+    steuernummer: '1981150000501',
+    jahr: '2026',
+    zeitraum: '01',
+    herstellerId: '99999',
+    datenLieferant: 'Custom Tax Software GmbH',
+    nutzdatenTicket: 'TICKET-12345',
+  };
+
+  const xml = serializeUstVaElsterXml({ header });
+
+  assert.ok(xml.includes('<HerstellerID>99999</HerstellerID>'), 'Custom HerstellerID injected');
+  assert.ok(xml.includes('<DatenLieferant>Custom Tax Software GmbH</DatenLieferant>'), 'Custom DatenLieferant injected');
+  assert.ok(xml.includes('<NutzdatenTicket>TICKET-12345</NutzdatenTicket>'), 'Custom NutzdatenTicket injected');
 });
 
 test('serializeUstVaElsterXml validates mandatory headers and rejects invalid inputs', () => {
