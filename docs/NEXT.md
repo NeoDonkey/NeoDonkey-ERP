@@ -77,7 +77,7 @@ Decision records in `docs/decisions/` have been updated with concrete, `ready` i
    - `test(gobd): add automated Verfahrensdokumentation link and code-reference integrity test` (`area:tests`, `p1`, `ready`)
 9. **Chart of Accounts Template Onboarding & Opening Balance Initialization (`docs/decisions/2026-08-21-chart-of-accounts-template-onboarding-and-opening-balance-initialization.md`)**:
    - `feat(onboarding): parse and validate SKR03 and SKR04 JSON chart of accounts template definitions` (`area:runtime`, `p1`, `ready`)
-   - `feat(ledger): post opening balance (Eröffnungsbilanz) carryforward journal entries with strict debit/credit invariant validation against EBK 9000` (`area:runtime`, `p1`, `ready`)
+   - `feat(onboarding): post initial Eröffnungsbilanz company setup journal entries with EBK 9000 zero-balance invariant check` (`area:runtime`, `p1`, `ready`)
 
 Filed open issues (#81, #82, #83, #84) can be claimed immediately by engineering sessions. Additional defined issue specifications above will be claimable as soon as filed as open GitHub issues.
 
