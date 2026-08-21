@@ -329,7 +329,6 @@ function postingToDatevRow(entry, posting) {
     '',                           // 113 reserviert
     '',                           // 114 reserviert
     '',                           // 115 reserviert
-    '',                           // 116 reserviert
   ];
 }
 
