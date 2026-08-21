@@ -1,10 +1,11 @@
-// runtime/ui/views.js — the DOM for every screen. One renderer per *kind of* screen
+// runtime/ui/views.js - the DOM for every screen. One renderer per *kind of* screen
 // (list, detail, refusal, operating model, log), never one per entity.
 //
 // Search this file for a business word and you will not find one. Everything it draws it was
 // handed by viewmodel.js, which was handed it by the operating model.
 
 import { h, frag, cite, excerptBlock, badge, commandBlock, pair } from './render.js';
+import { isActivate, isEscape, moveCursor } from './keys.js';
 
 // ---------------------------------------------------------------------------------------------
 // overview
@@ -17,7 +18,7 @@ export function renderOverview(vm, { onEntity, onModel, onLog, starterNote = nul
       ? h.div({ class: 'notice notice-warn' },
         h.strong({ text: `The runtime recorded ${vm.warnings.length} warning`
           + `${vm.warnings.length === 1 ? '' : 's'}` }),
-        h.p({ text: 'Nothing is wrong with your data — but these are the moments the system took '
+        h.p({ text: 'Nothing is wrong with your data - but these are the moments the system took '
           + 'a slower or safer path than it intended, and you are being told rather than not.' }),
         h.ul({}, vm.warnings.map((w) => h.li({},
           h.code({ class: 'mono', text: w.at ?? '?' }), ' ', w.message,
@@ -58,7 +59,7 @@ export function renderOverview(vm, { onEntity, onModel, onLog, starterNote = nul
       h.div({ class: 'card' },
         h.header({ class: 'card-head' }, h.h2({ text: 'The transaction log' })),
         h.p({ text: 'Every fact in this company is a git commit signed with your key. You can '
-          + 'verify the whole chain here, or in a terminal with git — we would rather you did both.' }),
+          + 'verify the whole chain here, or in a terminal with git - we would rather you did both.' }),
         h.button({ class: 'primary', type: 'button', text: 'Open the log', on: { click: onLog } }))),
   );
 }
@@ -80,8 +81,8 @@ function opBadges(permissions) {
 function emptyModelState(onModel) {
   return h.div({ class: 'empty' },
     h.p({ text: 'This company has not been described yet, so there is nothing to show.' }),
-    h.p({ class: 'muted', text: 'Describe one kind of document — a file with a "## Fields" '
-      + 'section — and a table, a detail page and a form for it appear here. No interface code changes.' }),
+    h.p({ class: 'muted', text: 'Describe one kind of document - a file with a "## Fields" '
+      + 'section - and a table, a detail page and a form for it appear here. No interface code changes.' }),
     h.button({ class: 'primary', type: 'button', text: 'Write the first file', on: { click: onModel } }));
 }
 
@@ -90,7 +91,7 @@ function modelErrorPanel(errors, onModel) {
     h.header({ class: 'panel-head' },
       h.h2({ text: 'The operating model has errors, so nothing will be executed' }),
       h.p({ text: 'A model that cannot be read completely is never executed halfway. Fix these '
-        + 'lines and the system starts again — no migration, no restart.' })),
+        + 'lines and the system starts again - no migration, no restart.' })),
     h.ul({ class: 'refusal-list' }, errors.map((e) => h.li({},
       h.div({ class: 'refusal-reason', text: e.reason }),
       e.at ? cite(parseCite(e.at)) : null))),
@@ -121,11 +122,13 @@ export function renderList(vm, { onOpen, onCreate, onFilter, onOpenSource, filte
           vm.hiddenColumns > 0 ? ` · ${vm.hiddenColumns} more field${vm.hiddenColumns === 1 ? '' : 's'} on the detail page` : '')),
       h.div({ class: 'view-actions' },
         h.input({ type: 'search', placeholder: 'Filter…', value: filter,
+          'aria-label': `Filter ${vm.title}`,
+          dataset: { keepFocus: 'list-filter' },
           on: { input: (e) => onFilter(e.target.value) } }),
         h.button({
           class: canCreate ? 'primary' : 'ghost', type: 'button',
           text: `New ${vm.title.toLowerCase()}`,
-          title: canCreate ? null : 'your role may not create this — the form will explain why',
+          title: canCreate ? null : 'your role may not create this; the form will explain why',
           on: { click: onCreate },
         }))),
 
@@ -142,17 +145,46 @@ export function renderList(vm, { onOpen, onCreate, onFilter, onOpenSource, filte
         h.table({ class: 'grid' },
           h.thead({}, h.tr({}, vm.columns.map((c) => h.th({
             class: c.align === 'right' ? 'num' : null,
+            scope: 'col',
             title: `${c.name}: ${c.type}${c.required ? ' required' : ''}`,
           }, c.label, c.required ? h.span({ class: 'req-dot', text: '*' }) : null)))),
-          h.tbody({}, vm.rows.map((row) => h.tr({
-            class: 'clickable', on: { click: () => onOpen(vm.entity, row.id) },
-          }, row.cells.map((cell) => h.td({
-            class: [cell.align === 'right' ? 'num' : null,
-              cell.kind === 'empty' ? 'muted' : null,
-              cell.dangling ? 'dangling' : null].filter(Boolean).join(' ') || null,
-            title: cell.title ?? null,
-          }, cell.text))))))),
+          gridRows(vm, onOpen))),
   );
+}
+
+/**
+ * Rows you can drive from the keyboard: roving tabindex (one row in the tab order, arrows
+ * move within the table, Enter opens). The movement decision lives in keys.js, pure, so it
+ * is tested without a DOM; this function only applies the result to elements.
+ */
+function gridRows(vm, onOpen) {
+  const rows = vm.rows.map((row, i) => h.tr({
+    class: 'clickable',
+    tabindex: i === 0 ? '0' : '-1',
+    dataset: { rowId: row.id },
+    on: { click: () => onOpen(vm.entity, row.id) },
+  }, row.cells.map((cell) => h.td({
+    class: [cell.align === 'right' ? 'num' : null,
+      cell.kind === 'empty' ? 'muted' : null,
+      cell.dangling ? 'dangling' : null].filter(Boolean).join(' ') || null,
+    title: cell.title ?? null,
+  }, cell.text))));
+
+  rows.forEach((tr, i) => tr.addEventListener('keydown', (e) => {
+    if (isActivate(e.key)) {
+      e.preventDefault();
+      onOpen(vm.entity, vm.rows[i].id);
+      return;
+    }
+    const next = moveCursor(e.key, i, rows.length);
+    if (next === null) return;
+    e.preventDefault();
+    tr.tabIndex = -1;
+    rows[next].tabIndex = 0;
+    rows[next].focus();
+  }));
+
+  return h.tbody({}, rows);
 }
 
 function renderUnknownEntity(vm) {
@@ -246,7 +278,7 @@ export function renderDetail(vm, { onOpen, onEdit, onDelete, onBack, onOpenSourc
 }
 
 // ---------------------------------------------------------------------------------------------
-// THE REFUSAL — item 4. The most important screen in the product.
+// THE REFUSAL - item 4. The most important screen in the product.
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -261,9 +293,14 @@ export function renderDetail(vm, { onOpen, onEdit, onDelete, onBack, onOpenSourc
  * refused them is a sentence in their own company's description, and they can change it.
  */
 export function renderRefusal(vm, { onOpenSource, onDismiss, title = 'Refused' }) {
-  return h.section({ class: 'panel panel-refusal', role: 'alert' },
+  // The panel takes focus so a keyboard user lands on the explanation, and Escape leaves it.
+  // tabindex -1 means programmatic focus only: it never enters the tab order.
+  const panel = h.section({ class: 'panel panel-refusal', role: 'alert', tabindex: '-1',
+    on: { keydown: (e) => {
+      if (isEscape(e.key)) { e.preventDefault(); onDismiss(); }
+    } } },
     h.header({ class: 'panel-head' },
-      h.h2({ text: `${title} — ${vm.count === 1 ? 'one rule' : `${vm.count} rules`} stood in the way` }),
+      h.h2({ text: `${title}: ${vm.count === 1 ? 'one rule' : `${vm.count} rules`} stood in the way` }),
       h.p({ text: 'Nothing was written. This is the operating model refusing, not a malfunction: '
         + 'each line below is a sentence in this company’s own description.' })),
 
@@ -310,10 +347,15 @@ export function renderRefusal(vm, { onOpenSource, onDismiss, title = 'Refused' }
       h.button({ class: 'ghost', type: 'button', text: 'Back to the form', on: { click: onDismiss } }),
       h.small({ class: 'muted', text: 'Every refusal in this system names its own file and line. '
         + 'There are no hidden rules.' })));
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => panel.focus());
+  }
+  return panel;
 }
 
 // ---------------------------------------------------------------------------------------------
-// the operating model — Principle 11, made touchable
+// the operating model - Principle 11, made touchable
 // ---------------------------------------------------------------------------------------------
 
 export function renderModelTree(tree, { onOpenFile, onNewFile, modelErrors = [] }) {
@@ -327,7 +369,7 @@ export function renderModelTree(tree, { onOpenFile, onNewFile, modelErrors = [] 
         h.button({ class: 'primary', type: 'button', text: 'New file', on: { click: onNewFile } }))),
     modelErrors.length
       ? h.div({ class: 'notice notice-warn' },
-        h.strong({ text: `${modelErrors.length} error${modelErrors.length === 1 ? '' : 's'} — nothing is being executed` }),
+        h.strong({ text: `${modelErrors.length} error${modelErrors.length === 1 ? '' : 's'}: nothing is being executed` }),
         h.ul({}, modelErrors.map((e) => h.li({},
           h.span({ text: e.reason }), ' ', e.at ? cite(parseCite(e.at)) : null))))
       : null,
@@ -345,7 +387,7 @@ export function renderModelTree(tree, { onOpenFile, onNewFile, modelErrors = [] 
 }
 
 /**
- * View and edit one file. The editor is a `<textarea>` — deliberately, because the thing being
+ * View and edit one file. The editor is a `<textarea>` - deliberately, because the thing being
  * edited is prose with some structure in it, not source code, and a syntax-highlighting editor
  * would quietly reframe it as programming (Principle 11 says it is not).
  */
@@ -400,7 +442,7 @@ function modelFileSummary(vm) {
     && vm.predicates.length === 0 && !vm.roleDef;
   if (empty) {
     return h.div({ class: 'empty' },
-      h.p({ text: 'The runtime reads nothing executable from this file — it is prose only.' }),
+      h.p({ text: 'The runtime reads nothing executable from this file - it is prose only.' }),
       h.p({ class: 'muted', text: 'That is a valid file. Prose is half the point of an '
         + 'operating model; only the "##" sections below are executed.' }));
   }
@@ -445,8 +487,8 @@ export function renderDiagnostics(vm) {
   return h.section({ class: 'panel panel-refusal' },
     h.header({ class: 'panel-head' },
       h.h2({ text: vm.items.length === 1
-        ? 'That text was not saved — one line could not be read'
-        : `That text was not saved — ${vm.items.length} lines could not be read` }),
+        ? 'That text was not saved: one line could not be read'
+        : `That text was not saved: ${vm.items.length} lines could not be read` }),
       h.p({ text: 'The previous version is still running. Nothing was half-applied.' })),
     h.ul({ class: 'refusal-list' }, vm.items.map((item) => h.li({ class: 'refusal-item' },
       h.div({ class: 'refusal-reason', text: item.reason }),
@@ -479,11 +521,11 @@ export function renderLog(vm, { onVerify, onOpen, onOpenSource, verifying = fals
           : `${vm.counts.good} of ${vm.total} commits verify against the public key in this repo` }),
         h.p({ text: vm.counts.bad
           ? 'A bad signature means the commit was altered after it was signed. Any peer detects this.'
-          : 'Verified by this runtime’s own SSHSIG code — no git binary, no ssh binary, in the browser.' }),
+          : 'Verified by this runtime’s own SSHSIG code - no git binary, no ssh binary, in the browser.' }),
         vm.counts.none ? h.p({ class: 'muted', text: `${vm.counts.none} unsigned.` }) : null,
         vm.counts['unknown-signer']
           ? h.p({ class: 'muted', text: `${vm.counts['unknown-signer']} signed by a peer whose `
-            + 'public key is not in this repo — neither verified nor forged.' }) : null)
+            + 'public key is not in this repo - neither verified nor forged.' }) : null)
       : null,
 
     // Inviting independent verification is the point. If the user only ever trusts our
@@ -496,7 +538,7 @@ export function renderLog(vm, { onVerify, onOpen, onOpenSource, verifying = fals
         ? h.p({}, 'Your workspace is the folder ', h.code({ class: 'mono', text: workspaceHint }), '.')
         : h.p({ class: 'muted', text: 'This workspace lives in the browser’s private storage '
           + '(OPFS), so there is no folder to open in a terminal. Choose a real folder on first '
-          + 'run — or on any machine where you can — and these commands work verbatim.' }),
+          + 'run, or on any machine where you can, and these commands work verbatim.' }),
       commandBlock([
         ...(allowedSigners ? [
           '# tell git which key is allowed to sign for you (once)',
@@ -534,7 +576,7 @@ export function renderLog(vm, { onVerify, onOpen, onOpenSource, verifying = fals
           ? e.rules.map((r) => h.div({},
             cite(r.at, { onOpen: onOpenSource }),
             r.sentence ? h.pre({ class: 'rule-text tiny', text: r.sentence }) : null))
-          : h.span({ class: 'muted', text: '—' })),
+          : h.span({ class: 'muted', text: 'no rule' })),
         h.td({ class: 'muted mono', text: e.when })))))),
   );
 }
@@ -548,7 +590,7 @@ function signatureBadge(signature) {
 const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
 
 // ---------------------------------------------------------------------------------------------
-// this runtime — where the code came from, and whether it is the code you think it is
+// this runtime - where the code came from, and whether it is the code you think it is
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -559,7 +601,7 @@ const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
  * ensures that updates not signed by the pinned release key are refused.
  */
 /**
- * The release gate's verdict, shown plainly — including when there is nothing to show.
+ * The release gate's verdict, shown plainly - including when there is nothing to show.
  *
  * This block exists because COMPROMISES #15 promised an "unsigned" banner and the code captured the
  * verdict without ever rendering it: the register was describing a screen nobody had built. An
@@ -574,7 +616,7 @@ function releaseBlock(release) {
       h.strong({ text: 'This runtime is not signed' }),
       h.p({ text: 'No release manifest was served, so nothing here was checked against a signing '
         + 'key and nothing pins what a future update may replace it with. The hashes below still '
-        + 'let you compare this code against the repository by hand — but the origin that served '
+        + 'let you compare this code against the repository by hand - but the origin that served '
         + 'it is being trusted, which is exactly the dependency a signed release removes.' }),
       h.p({ class: 'muted', text: 'Expected for a development build served from localhost. Not '
         + 'acceptable for a company that keeps its books here.' }));
@@ -588,7 +630,7 @@ function releaseBlock(release) {
       h.dl({ class: 'fields' },
         h.dt({ text: 'Release' }), h.dd({ class: 'mono', text: release.version ?? 'unknown' }),
         h.dt({ text: 'Signing key' }), h.dd({ class: 'mono', text: release.fingerprint ?? 'unknown' })),
-      h.p({ text: 'An update not signed by this key will be refused — including one served by us. '
+      h.p({ text: 'An update not signed by this key will be refused - including one served by us. '
         + 'Compare the fingerprint against the one published outside this website: in the '
         + 'repository, in the release notes, and on paper.' }));
   }
@@ -620,7 +662,7 @@ export function renderRuntime(vm, { onRehash, onCheckUpdate, onApplyUpdate, busy
       ? h.div({ class: 'notice' },
         h.strong({ text: `A new version of NeoDonkey is ready to install.` }),
         h.p({ text: 'The version you are running now keeps running until you choose. Nothing '
-          + 'updates itself — two peers on different versions exchange the same facts.' }),
+          + 'updates itself - two peers on different versions exchange the same facts.' }),
         h.button({ class: 'primary', type: 'button', text: 'Install and reload',
           on: { click: onApplyUpdate } }))
       : null,
@@ -633,13 +675,13 @@ export function renderRuntime(vm, { onRehash, onCheckUpdate, onApplyUpdate, busy
         pair('Version', vm.version),
         pair('Served from', org.origin, { mono: true }),
         pair('App base', org.base, { mono: true }),
-        pair('Secure context', org.secureContext ? 'yes' : 'no — OPFS and passkeys are unavailable'),
+        pair('Secure context', org.secureContext ? 'yes' : 'no; OPFS and passkeys are unavailable'),
         pair('Installed as an app', org.standalone ? 'yes (standalone window)' : 'no (browser tab)'),
         pair('Offline cache', worker.supported
           ? (worker.status === 'controlling'
-            ? `ready — ${org.shellFiles} files cached, works with no network`
+            ? `ready: ${org.shellFiles} files cached, works with no network`
             : `service worker ${worker.status}`)
-          : `not available — ${worker.note ?? worker.error ?? 'unsupported'}`),
+          : `not available: ${worker.note ?? worker.error ?? 'unsupported'}`),
         pair('Persistent storage', persistenceText(persistence))),
       persistence && persistence.supported && !persistence.persisted
         ? h.div({ class: 'notice notice-warn' },
@@ -656,7 +698,7 @@ export function renderRuntime(vm, { onRehash, onCheckUpdate, onApplyUpdate, busy
     h.section({ class: 'card' },
       h.header({ class: 'card-head' },
         h.h2({ text: 'Do not take our word for it' }),
-        h.small({ class: 'muted', text: 'These hashes are over the bytes this browser received — '
+        h.small({ class: 'muted', text: 'These hashes are over the bytes this browser received - '
           + 'so they also catch a server that changes the code on the way to you.' })),
 
       hashes.combined
@@ -670,7 +712,7 @@ export function renderRuntime(vm, { onRehash, onCheckUpdate, onApplyUpdate, busy
         : h.div({ class: 'notice notice-warn' },
           h.strong({ text: 'Some runtime files could not be read, so there is no combined hash' }),
           h.ul({}, hashes.failed.map((f) => h.li({},
-            h.code({ class: 'mono', text: f.path }), ' — ', f.reason)))),
+            h.code({ class: 'mono', text: f.path }), ': ', f.reason)))),
 
       releaseBlock(vm.release),
 
@@ -679,7 +721,7 @@ export function renderRuntime(vm, { onRehash, onCheckUpdate, onApplyUpdate, busy
         h.p({ text: 'A hash tells you the code has not changed since you last looked. It cannot '
           + 'tell you the code was right the first time. If the origin you installed from was '
           + 'compromised on day one, every hash here would match a compromised runtime and you '
-          + 'could not tell. That is what the signature above is for — and why the first install '
+          + 'could not tell. That is what the signature above is for - and why the first install '
           + 'is the one moment cryptography cannot protect.' })),
 
       h.details({},
@@ -699,7 +741,7 @@ function persistenceText(p) {
   if (!p.supported) return 'this browser does not offer it';
   const size = p.estimate?.usage !== undefined
     ? ` · using ${formatBytes(p.estimate.usage)} of ${formatBytes(p.estimate.quota)}` : '';
-  return (p.persisted ? 'granted — the browser will not evict your workspace' : 'DENIED') + size;
+  return (p.persisted ? 'granted: the browser will not evict your workspace' : 'DENIED') + size;
 }
 
 function formatBytes(n) {
