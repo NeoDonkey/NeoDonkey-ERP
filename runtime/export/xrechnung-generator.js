@@ -156,7 +156,8 @@ export function generateXRechnungUblXml(invoice) {
   for (let i = 0; i < invoice.lines.length; i++) {
     const line = invoice.lines[i];
     const lineContext = `line ${i + 1}`;
-    const lineId = line.lineId ? String(line.lineId).trim() : String(i + 1);
+    const lineId = (line.lineId !== undefined && line.lineId !== null) ? String(line.lineId).trim() : String(i + 1);
+    const unitCode = (line.unitCode && typeof line.unitCode === 'string') ? line.unitCode.trim() : 'C62';
 
     const qtyXml = formatQuantityXml(line.quantity, lineContext);
 
@@ -174,12 +175,22 @@ export function generateXRechnungUblXml(invoice) {
     }
     const itemPriceXml = formatMoneyXml(line.itemPrice, currency, `line ${lineId} itemPrice`);
 
+    const vatCategory = (line.vatCategory && typeof line.vatCategory === 'string') ? line.vatCategory.trim() : 'S';
+    const vatPercent = (line.vatPercent !== undefined && line.vatPercent !== null) ? String(line.vatPercent).trim() : '19';
+
     linesXmlParts.push(`  <cac:InvoiceLine>
     <cbc:ID>${escapeXml(lineId)}</cbc:ID>
-    <cbc:InvoicedQuantity unitCode="C62">${qtyXml}</cbc:InvoicedQuantity>
+    <cbc:InvoicedQuantity unitCode="${escapeXml(unitCode)}">${qtyXml}</cbc:InvoicedQuantity>
     <cbc:LineExtensionAmount currencyID="${escapeXml(currency)}">${lineNetAmountXml}</cbc:LineExtensionAmount>
     <cac:Item>
       <cbc:Name>${escapeXml(line.itemName.trim())}</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:ID>${escapeXml(vatCategory)}</cbc:ID>
+        <cbc:Percent>${escapeXml(vatPercent)}</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:ClassifiedTaxCategory>
     </cac:Item>
     <cac:Price>
       <cbc:PriceAmount currencyID="${escapeXml(currency)}">${itemPriceXml}</cbc:PriceAmount>
@@ -198,6 +209,41 @@ export function generateXRechnungUblXml(invoice) {
   const taxInclusiveAmountXml = formatMoneyXml(invoice.totals.taxInclusiveAmount, currency, 'totals.taxInclusiveAmount');
   const payableAmountXml = formatMoneyXml(invoice.totals.payableAmount, currency, 'totals.payableAmount');
 
+  // EN 16931 BG-23: VAT Breakdown / cac:TaxSubtotal
+  let taxSubtotalsXml = '';
+  if (Array.isArray(invoice.taxSubtotals) && invoice.taxSubtotals.length > 0) {
+    taxSubtotalsXml = invoice.taxSubtotals.map((sub, idx) => {
+      const taxableXml = formatMoneyXml(sub.taxableAmount, currency, `taxSubtotals[${idx}].taxableAmount`);
+      const taxXml = formatMoneyXml(sub.taxAmount, currency, `taxSubtotals[${idx}].taxAmount`);
+      const category = (sub.vatCategory && typeof sub.vatCategory === 'string') ? sub.vatCategory.trim() : 'S';
+      const percent = (sub.vatPercent !== undefined && sub.vatPercent !== null) ? String(sub.vatPercent).trim() : '19';
+      return `    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${taxableXml}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${escapeXml(currency)}">${taxXml}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>${escapeXml(category)}</cbc:ID>
+        <cbc:Percent>${escapeXml(percent)}</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`;
+    }).join('\n');
+  } else {
+    // Default single TaxSubtotal from invoice totals (Standard rate 19%)
+    taxSubtotalsXml = `    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${taxExclusiveAmountXml}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${escapeXml(currency)}">${taxAmountXml}</cbc:TaxAmount>
+      <cac:TaxCategory>
+        <cbc:ID>S</cbc:ID>
+        <cbc:Percent>19</cbc:Percent>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:TaxCategory>
+    </cac:TaxSubtotal>`;
+  }
+
   const buyerRefXml = invoice.buyerReference
     ? `\n  <cbc:BuyerReference>${escapeXml(invoice.buyerReference.trim())}</cbc:BuyerReference>`
     : '';
@@ -210,7 +256,7 @@ export function generateXRechnungUblXml(invoice) {
 <Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
          xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
          xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
-  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_2.2</cbc:CustomizationID>
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0</cbc:CustomizationID>
   <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
   <cbc:ID>${escapeXml(invoice.invoiceNumber.trim())}</cbc:ID>
   <cbc:IssueDate>${escapeXml(invoice.issueDate.trim())}</cbc:IssueDate>
@@ -238,6 +284,7 @@ export function generateXRechnungUblXml(invoice) {
   </cac:AccountingCustomerParty>
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${escapeXml(currency)}">${taxAmountXml}</cbc:TaxAmount>
+\n${taxSubtotalsXml}
   </cac:TaxTotal>
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${escapeXml(currency)}">${lineExtensionAmountXml}</cbc:LineExtensionAmount>

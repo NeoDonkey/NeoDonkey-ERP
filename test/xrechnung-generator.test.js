@@ -24,17 +24,23 @@ test('generateXRechnungUblXml produces valid UBL 2.1 XML and round-trips with pa
     lines: [
       {
         lineId: '1',
+        unitCode: 'C62',
         quantity: 10n,
         lineNetAmount: money('100.00 EUR'),
         itemName: 'ERP Consulting Services & Licenses',
-        itemPrice: money('10.00 EUR')
+        itemPrice: money('10.00 EUR'),
+        vatCategory: 'S',
+        vatPercent: '19'
       },
       {
         lineId: '2',
+        unitCode: 'C62',
         quantity: '5',
         lineNetAmount: money('50.00 EUR'),
         itemName: 'Support Ticket Pack <10x>',
-        itemPrice: money('10.00 EUR')
+        itemPrice: money('10.00 EUR'),
+        vatCategory: 'S',
+        vatPercent: '19'
       }
     ],
     totals: {
@@ -50,9 +56,15 @@ test('generateXRechnungUblXml produces valid UBL 2.1 XML and round-trips with pa
 
   assert.ok(typeof xml === 'string', 'XML output must be string');
   assert.ok(xml.includes('<?xml version="1.0" encoding="UTF-8"?>'), 'Must contain XML declaration');
+  assert.ok(xml.includes('urn:xoev-de:kosit:standard:xrechnung_3.0'), 'Must contain XRechnung 3.0 CustomizationID');
   assert.ok(xml.includes('<cbc:ID>INV-2026-001</cbc:ID>'), 'Must include invoice number');
   assert.ok(xml.includes('&amp; Co. KG'), 'Must escape special XML characters');
   assert.ok(xml.includes('&lt;10x&gt;'), 'Must escape item name tags');
+
+  // Verify EN 16931 BG-23 TaxSubtotal presence
+  assert.ok(xml.includes('<cac:TaxSubtotal>'), 'Must include cac:TaxSubtotal element');
+  assert.ok(xml.includes('<cbc:TaxableAmount currencyID="EUR">150.00</cbc:TaxableAmount>'), 'Must include TaxableAmount in TaxSubtotal');
+  assert.ok(xml.includes('<cac:ClassifiedTaxCategory>'), 'Must include ClassifiedTaxCategory in item');
 
   // Round-trip verification: Pass generated XML into parseXRechnungUblXml
   const parsed = parseXRechnungUblXml(xml);
