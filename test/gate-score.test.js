@@ -94,9 +94,12 @@ const CONDITIONS = [
   {
     number: 9,
     title: 'An adversary tried',
-    status: 'red',
-    evidence: [],
-    missing: 'External security audit and red team penetration test report.',
+    status: 'partial',
+    evidence: [
+      'test/redteam.test.js',
+      'docs/security-redteam-2026-08-21.md',
+    ],
+    missing: 'External security audit by an independent party.',
     description: 'External security audit and red team attempt to forge commits, bypass rules, unbalance ledger, or breach group encryption.',
   },
   {

@@ -8,8 +8,8 @@ Generated and verified by `test/gate-score.test.js`. Do not edit by hand.
 ## Summary
 
 - **Green (Met):** 5 / 10
-- **Partial:** 1 / 10
-- **Red (Unmet):** 4 / 10
+- **Partial:** 2 / 10
+- **Red (Unmet):** 3 / 10
 
 ---
 
@@ -81,13 +81,15 @@ Verfahrensdokumentation covering GoBD requirements (Nachvollziehbarkeit, Unverä
 
 **Missing:** Verfahrensdokumentation document cross-referenced to code locations.
 
-### Condition 9 — An adversary tried [RED]
+### Condition 9 — An adversary tried [PARTIAL]
 
 External security audit and red team attempt to forge commits, bypass rules, unbalance ledger, or breach group encryption.
 
-**Evidence:** None
+**Evidence:**
+- `test/redteam.test.js`
+- `docs/security-redteam-2026-08-21.md`
 
-**Missing:** External security audit and red team penetration test report.
+**Missing:** External security audit by an independent party.
 
 ### Condition 10 — Every claim audited [PARTIAL]
 
