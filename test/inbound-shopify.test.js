@@ -480,6 +480,49 @@ test('OSS destination sale → destination rate on the model\'s OSS accounts, ne
   assert.deepEqual(journalEntry.postings.map((p) => p.account), [account, '8336', '1791']);
 });
 
+test('a taxed sale whose treatment names no VAT account is refused — the VAT leg is never dropped', () => {
+  const order = normalizeOrder(REST_PAID_19, OPTS);
+  // The treatment was adopted with its output-VAT account left blank, but the order carries
+  // real tax at that rate: crediting only revenue would leave the booking unbalanced by
+  // exactly the tax while the invoice still shows the VAT amount. The dialect refuses and
+  // names the gap in the model — it never drops a VAT leg to make the booking fit.
+  const noVatAccount = TREATMENT_DOCS.map((t) => (t.name === 'domestic-standard'
+    ? { ...t, 'output-vat-account-number': '' } : t));
+  assert.throws(
+    () => orderToDocuments(order, resolvedFor(order, { classes: classifyOrder(order, noVatAccount) })),
+    (e) => e.code === 'treatment-accounts-undetermined');
+
+  // A genuinely zero-rated treatment names no VAT account legitimately: there is no tax to
+  // post, so nothing is missing — the booking balances without a VAT leg.
+  const zeroRatedDocs = [...TREATMENT_DOCS, {
+    name: 'domestic-zero', 'applies-to': 'sale', 'vat-rate-percent': 0,
+    'rate-determined-by': 'origin-country', 'requires-oss-return': false, status: 'active',
+    'revenue-account-number': '8390', 'output-vat-account-number': '',
+  }];
+  const zeroOrder = normalizeOrder({
+    ...REST_PAID_19,
+    total_price: '44.99', total_tax: '0.00',
+    tax_lines: [{ title: 'MwSt', rate: 0, price: '0.00' }],
+    line_items: REST_PAID_19.line_items.map((li) => ({
+      ...li, tax_lines: [{ title: 'MwSt', rate: 0, price: '0.00' }],
+    })),
+  }, OPTS);
+  // resolvedFor would classify with the default TREATMENT_DOCS first and throw
+  // treatment-not-in-model on the 0 % rate before the override is even read — build directly.
+  const { journalEntry } = orderToDocuments(zeroOrder, {
+    classes: classifyOrder(zeroOrder, zeroRatedDocs),
+    customerAccount: customerAccountFor(zeroOrder, OPTS.subledger),
+    clearingAccount: OPTS.clearingAccount,
+  });
+  assert.ok(!journalEntry.postings.some((p) => p.role === 'output-vat'),
+    'a zero-rated sale posts no VAT leg — because there is no tax, not because one was dropped');
+  assert.equal(journalEntry['debit-amount'], journalEntry['credit-amount'],
+    'the booking balances on its own');
+  assert.equal(journalEntry['debit-amount'], '44.99 EUR');
+  assert.deepEqual(journalEntry.postings.map((p) => p.account),
+    [customerAccountFor(zeroOrder, OPTS.subledger), '8390']);
+});
+
 test('policy is never defaulted: home country, clearing account and subledger are required', () => {
   // No home country: the origin side of every VAT decision is missing — refuse.
   assert.throws(() => normalizeOrder(REST_PAID_19, { ...OPTS, homeCountry: undefined }),
@@ -518,6 +561,17 @@ test('internally inconsistent orders are refused, never repaired', () => {
       ...REST_PAID_19, shipping_lines: [{ title: 'DHL', price: '4.90' }],
     }, OPTS),
     (e) => e.code === 'shipping-unsupported');
+  // a line item whose quantity is zero or negative: nothing to book, never a negative sale.
+  assert.throws(
+    () => normalizeOrder({
+      ...REST_PAID_19, line_items: [{ ...REST_PAID_19.line_items[0], quantity: 0 }],
+    }, OPTS),
+    (e) => e.code === 'bad-quantity');
+  assert.throws(
+    () => normalizeOrder({
+      ...REST_PAID_19, line_items: [{ ...REST_PAID_19.line_items[0], quantity: -2 }],
+    }, OPTS),
+    (e) => e.code === 'bad-quantity');
 });
 
 // =============================================================================================
@@ -594,6 +648,7 @@ test('ingestion commits through the real kernel: signed commits, indexed documen
   assert.equal(stored['source-system'], 'shopify');
   assert.equal(stored['source-id'], '5628190318720');
   assert.equal(stored.reference, 'Shopify #1001');
+  assert.equal(first.journalEntry.description, 'Shopify #1001 — webshop sale');
   assert.equal(stored['gross-amount'], '53.54 EUR');
 
   // Every commit verifies — the ingestion path is the signed-commit path, not a side channel.
