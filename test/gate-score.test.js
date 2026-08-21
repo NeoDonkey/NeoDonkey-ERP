@@ -86,9 +86,12 @@ const CONDITIONS = [
   {
     number: 8,
     title: 'A German auditor\'s questions have written answers',
-    status: 'red',
-    evidence: [],
-    missing: 'Verfahrensdokumentation document cross-referenced to code locations.',
+    status: 'green',
+    evidence: [
+      'docs/VERFAHRENSDOKUMENTATION.md',
+      'test/verfahrensdok.test.js',
+    ],
+    missing: null,
     description: 'Verfahrensdokumentation covering GoBD requirements (Nachvollziehbarkeit, Unveränderbarkeit, Vollständigkeit, Zeitgerechtigkeit).',
   },
   {
