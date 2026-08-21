@@ -1,4 +1,4 @@
-// runtime/ui/forms.js — one form renderer. There is no second one, and no per-entity one.
+// runtime/ui/forms.js - one form renderer. There is no second one, and no per-entity one.
 //
 // Every input on screen comes from a `## Fields` line. The control type comes from the
 // declared type (fields.js `inputTypeFor`), a `reference to <entity>` becomes a picker filled
@@ -14,6 +14,7 @@
 //     a form that commits per keystroke would put 200 CRDT ops where one fact belongs.
 
 import { h, frag, cite, badge } from './render.js';
+import { isEscape } from './keys.js';
 import { collectForm } from './viewmodel.js';
 
 /**
@@ -47,6 +48,7 @@ export function renderForm(form, handlers) {
     form.fields.map((f) => {
       const control = buildControl(f, form);
       controls.set(f.name, control);
+      if (f.problem) control.setAttribute('aria-invalid', 'true');
       return field({
         label: f.label,
         required: f.required,
@@ -74,6 +76,8 @@ export function renderForm(form, handlers) {
     novalidate: true,
     on: {
       submit: (e) => { e.preventDefault(); onSubmit(read()); },
+      // Escape leaves the form, the same way it dismisses a refusal.
+      keydown: (e) => { if (isEscape(e.key)) onCancel(); },
     },
   },
   h.header({ class: 'card-head' },
@@ -98,7 +102,7 @@ function authorizationNotice(form, onOpenSource) {
   if (!p || p.allowed) return null;
   return h.div({ class: 'notice notice-warn' },
     h.strong({ text: `Your role may not ${form.mode === 'create' ? 'create' : 'change'} a ${form.entity}.` }),
-    h.p({ text: 'You can fill this in, but the operating model will refuse it — authorization is '
+    h.p({ text: 'You can fill this in, but the operating model will refuse it: authorization is '
       + 'a rule, not a hidden button. These lines decide:' }),
     h.ul({}, p.blockedBy.map((r) => h.li({},
       h.code({ class: 'rule-inline', text: `## Authorized by ${r.authorizedBy.join(' or ')}` }),
@@ -129,7 +133,7 @@ function buildControl(f, form) {
 
   if (c.control === 'select') {
     const select = h.select({ id, name: f.name, disabled: f.problem ? true : null });
-    select.appendChild(h.option({ value: '', text: f.emptyOption ?? '— none —' }));
+    select.appendChild(h.option({ value: '', text: f.emptyOption ?? '(none)' }));
     for (const opt of f.options ?? []) {
       select.appendChild(h.option({ value: opt.value, text: opt.label }));
     }

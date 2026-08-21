@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="color-scheme" content="dark light">
 <title>NeoDonkey</title>
 <!--
   Every href below is RELATIVE. Not one leading slash, anywhere in this app: that is what lets
@@ -12,12 +12,13 @@
   the folder. See docs/_compromise-ui.md.
 -->
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#2f5d8c">
+<meta name="theme-color" content="#0c1015">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="NeoDonkey">
 <link rel="apple-touch-icon" href="runtime/ui/icon.svg">
+<link rel="stylesheet" href="runtime/ui/tokens.css">
 <link rel="stylesheet" href="runtime/ui/style.css">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232f5d8c'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='14' font-weight='700' fill='white' text-anchor='middle'%3End%3C/text%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230c1015'/%3E%3Ctext x='16' y='22' font-family='system-ui,sans-serif' font-size='14' font-weight='700' fill='%233dd8f5' text-anchor='middle'%3End%3C/text%3E%3C/svg%3E">
 </head>
 <body>
 
@@ -31,7 +32,7 @@
 <noscript>
   <section class="onboard">
     <h1>NeoDonkey needs JavaScript</h1>
-    <p class="lead">The runtime <em>is</em> the JavaScript in this folder — there is no server
+    <p class="lead">The runtime <em>is</em> the JavaScript in this folder - there is no server
     doing the work elsewhere. With scripting disabled there is nothing to run.</p>
   </section>
 </noscript>
@@ -66,7 +67,7 @@
   var howToRun =
     '<h2>Double-click one file</h2>' +
     '<p>In this same folder there is <strong>Start NeoDonkey.command</strong>. Double-click it. ' +
-    'It opens your browser on NeoDonkey and nothing else — no installation, no terminal, ' +
+    'It opens your browser on NeoDonkey and nothing else - no installation, no terminal, ' +
     'no network. Close its window to stop.</p>' +
     '<p class="muted">On Windows: <strong>Start NeoDonkey.bat</strong>. On Linux: ' +
     '<code class="mono">./start-neodonkey.sh</code>. If macOS refuses to open a file you ' +
@@ -75,11 +76,11 @@
     '<pre class="command-text">cd ' + esc(fileFolder()) + '\nnode serve.mjs</pre>' +
     '<p>Then open <a href="http://127.0.0.1:8080">http://127.0.0.1:8080</a>. ' +
     '<code class="mono">serve.mjs</code> is about a hundred lines of <code class="mono">node:http</code> ' +
-    'in this repository — no dependencies, nothing installed, and it only ever reads files.</p>' +
+    'in this repository - no dependencies, nothing installed, and it only ever reads files.</p>' +
     '</details>' +
     '<h2>Why this step exists at all</h2>' +
     '<p>Because you are holding the source. A browser will not load a program out of a folder ' +
-    'on your disk — that is a security rule, not something we can work around.</p>' +
+    'on your disk - that is a security rule, not something we can work around.</p>' +
     '<p><strong>A NeoDonkey user never does this.</strong> They open a web address once, click ' +
     '“Install”, and get an app with its own icon that works offline from then on. This page is ' +
     'what the developer version looks like.</p>';
@@ -98,7 +99,7 @@
       'This page has to be served, not opened from disk',
       'You opened <code class="mono">index.html</code> directly, so the browser is treating every ' +
       'file in this folder as a separate, untrusted origin. It refuses to load the runtime’s ' +
-      'ES modules — and it is right to. Nothing is broken; it just needs a local address.',
+      'ES modules - and it is right to. Nothing is broken; it just needs a local address.',
       howToRun +
       '<details open><summary>Why this is a real compromise, and not a detail</summary>' +
       '<p>The manifesto (Appendix X) promises Sarah can double-click the HTML. On a ' +
@@ -125,7 +126,7 @@
       'means the server is not sending <code class="mono">text/javascript</code> for ' +
       '<code class="mono">.js</code>. <code class="mono">serve.mjs</code> does; many one-line ' +
       'static servers do not.</li>' +
-      '<li>A <strong>404</strong> on any file under <code class="mono">runtime/</code> — the ' +
+      '<li>A <strong>404</strong> on any file under <code class="mono">runtime/</code> - the ' +
       'whole module graph has to be reachable from this page’s folder.</li>' +
       '<li>A <strong>SyntaxError</strong>, which is a bug in this repository. The console names ' +
       'the file and line.</li>' +

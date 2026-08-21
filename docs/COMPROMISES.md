@@ -44,11 +44,11 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**23 open entries. 12 closed.** Counted 2026-08-19.
+**24 open entries. 12 closed.** Counted 2026-08-21.
 
 | Category | Open | Entries |
 |---|---|---|
-| **our shortfall** | **0** (+1 named residual risk) | #15 residual risk 7 |
+| **our shortfall** | **1** (+1 named residual risk) | #24, #15 residual risk 7 |
 | real work | 13 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20, #25 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
@@ -65,8 +65,9 @@ By rule 2, **none of these may be in v1.0 when it ships.**
 | | What | Why it is ours | Cost |
 |---|---|---|---|
 | **#15 rr7** | The signed-runtime machinery ships unarmed: no production release key, no published fingerprint, no `release.json` in the repository. | "Publishing it is an hour of work, not an engineering project" — the entry's own assessment, and still true. | An hour, plus a decision about where the fingerprint is published. |
+| **#24** | Two relay-sync test patterns are quarantined out of the blocking check, so a real regression in `test/readme-claims.test.js` or `test/sync-relay.test.js` would pass CI. | A test that fails intermittently was quarantined rather than fixed, because no agent could reproduce it. #46's atomic-write fix cut the flake rate roughly eightfold, but the exit path this entry specifies — catch-up on reconnect in `runtime/sync/` — is not implemented, so the quarantine and the hole remain. | Days, not hours: catch-up on reconnect in `runtime/sync/`, then 20 consecutive green full-suite runs and the two lines out of `test/known-flaky.txt`. |
 
-One item (#15 rr7) is hours rather than
+Two items: #24 is days of engineering; #15 rr7 is hours rather than
 days.
 
 ### Consolidation log — 2026-08-03, agent V
@@ -335,10 +336,6 @@ commutative, associative and idempotent, and no property test catches it.* Conve
 detect wrong business semantics.
 
 **Owner:** CTO. **Revisit:** Wave 3 — items 1 and 3 together, since both need the browser.
-
-### #4a — The Live Layer has no IndexedDB buffer — CLOSED, with a named deviation
-
-See Part 2 — Closed.
 
 ### #4c — Policy divergence between peers on different operating models
 
@@ -1225,6 +1222,60 @@ shape.
 **Exit path:** A human maintainer or a workflow with issue-creation write credentials files the specified issues from the decision record into GitHub, unblocking subsequent implementation sessions to claim them with `Closes #N`.
 
 ---
+
+## #24 — A known-flaky test is quarantined out of the blocking check
+
+**Category: our shortfall.** `test/known-flaky.txt` names tests whose failure CI will forgive.
+Today it names two patterns, both behind #46: "README Claim 4" in `test/readme-claims.test.js`
+and "two processes converge through the relay" in `test/sync-relay.test.js`.
+
+**Why it was taken.** `test` is a required check and nobody watches this repository for days at a
+time. A test that fails intermittently for a reason no agent can reproduce does not raise the
+quality bar; it sets throughput to zero at random and leaves correct work parked. #29 was blocked
+by exactly that on 2026-08-17: correct work, clean review, red build, and a duplicate issue nearly
+filed to redo it. `merge-sweeper` retries a failed build once, which turns one-in-eight into
+one-in-sixty-four and was still not enough.
+
+**What it costs.** A real regression in `test/readme-claims.test.js` "README Claim 4" or
+`test/sync-relay.test.js` would now pass CI. That is a genuine hole and it is why this is an entry
+here rather than a comment in a YAML file. It is bounded: the quarantine forgives only the named
+patterns, a known flake failing *alongside* anything else still fails the build, and a non-zero
+exit with no `not ok` line — a crash, a hang, a lost runner — fails loudly.
+
+**Where the exit path stands, re-verified 2026-08-21.** #46 is now closed on GitHub, and this
+entry stays open anyway, because what closed #46 is not what this entry's exit path specifies.
+Two causes shared one symptom — "the data never arrived" — and only one of them was fixed:
+
+- *Cause A — a reader observing a partially written file: fixed.* `nodeFs.write()` in
+  `runtime/git/fs-node.js` now writes to a temporary name and renames atomically, and the 0-byte
+  pack-index face has not been seen since (zero occurrences across the 25 measured runs recorded
+  in #46, against a previous rate of roughly one in eight). The flake rate dropped to roughly
+  one in twenty.
+- *Cause B — no catch-up on reconnect: not fixed.* `relay.mjs` forwards only to peers present in
+  the mailbox at that instant and holds nothing — deliberate, documented, and unchanged. The
+  sync layer above still assumes delivery. The one remaining failure face is a peer timeout: the
+  recovered peer waits out its watchdog for ops that were dropped while it was absent. Verified
+  by reading `runtime/sync/` (`gitsync.js`, `signalling.js`, `sealed.js`, `webrtc.js`,
+  `opbuffer.js`, `introduce.js`): no reconnect or catch-up path exists.
+
+So the atomic-writes fix reduced the flake's frequency without implementing the specified exit
+path, and the quarantine remains — the hole this entry exists to name is smaller, not closed.
+#46's own final comment says the same: this entry "closes only when the timeout face is gone
+too". A closed issue whose exit condition is unmet is exactly what this register exists to
+catch, so the register, not the issue tracker, is the source of truth here.
+
+**The exit path, unchanged.** Catch-up on reconnect in `runtime/sync/`: on rejoining a mailbox a
+peer asks what it missed instead of assuming the stream was continuous — git already computes
+what is missing between two heads. When that lands and the flake is gone (20 consecutive green
+full-suite runs, the verification bar set in #46), the two lines come out of
+`test/known-flaky.txt` and this entry closes with them.
+
+**Bounded by tests, not intentions.** `test/known-flaky.test.js` holds the list to three entries,
+requires it to cite an open issue and this register, and rejects a pattern short enough to forgive
+unrelated failures. With #46 closed, the issue citation in `test/known-flaky.txt` points at the
+closed diagnosis; a fresh issue for Cause B is owed the next time the timeout face fires.
+
+---
 ---
 
 # Part 2 — Closed
@@ -1417,35 +1468,6 @@ claiming un-enforceability have been entirely removed:
 - `operating-model/processes/returns-and-credit-notes.md` has the `credit-note needs approval` check with managing-director authority.
 
 **How that was verified — 2026-08-12, by running it:** Handled by running the entire test suite `npm test` (all 641 tests green, 639 passing, 2 skipped, 0 failures), proving that the files parse perfectly, compile, and execute correct branched logic under `evaluate()`.
-
-## #24 — A known-flaky test is quarantined out of the blocking check
-
-**Category: our shortfall.** `test/known-flaky.txt` names tests whose failure CI will forgive.
-Today it names one: the relay sync test behind #46, which fails roughly one run in eight under
-load with three faces — a 0-byte pack index, "no convergence within 20000 ms", and "peer timeout".
-
-**Why it was taken.** `test` is a required check and nobody watches this repository for days at a
-time. A test that fails intermittently for a reason no agent can reproduce does not raise the
-quality bar; it sets throughput to zero at random and leaves correct work parked. #29 was blocked
-by exactly that on 2026-08-17: correct work, clean review, red build, and a duplicate issue nearly
-filed to redo it. `merge-sweeper` retries a failed build once, which turns one-in-eight into
-one-in-sixty-four and was still not enough.
-
-**What it costs.** A real regression in `test/readme-claims.test.js` "README Claim 4" or
-`test/sync-relay.test.js` would now pass CI. That is a genuine hole and it is why this is an entry
-here rather than a comment in a YAML file. It is bounded: the quarantine forgives only the named
-patterns, a known flake failing *alongside* anything else still fails the build, and a non-zero
-exit with no `not ok` line — a crash, a hang, a lost runner — fails loudly.
-
-**The exit path.** #46. The relay forwards only to peers currently in its mailbox and holds
-nothing, which is deliberate and documented; the sync layer above assumes delivery and has no
-catch-up on reconnect. The fix is catch-up on reconnect in `runtime/sync/` — git already computes
-what is missing between two heads. When #46 closes, the two lines come out of
-`test/known-flaky.txt` and this entry closes with it.
-
-**Bounded by tests, not intentions.** `test/known-flaky.test.js` holds the list to three entries,
-requires it to cite an open issue and this register, and rejects a pattern short enough to forgive
-unrelated failures.
 
 ## #15 rr4 — Residual risk 4: unsigned development builds are runnable, and the UI does not say so — CLOSED
 

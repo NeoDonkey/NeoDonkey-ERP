@@ -1,0 +1,123 @@
+/* runtime/ui/tokens.css - every visual decision, as data. Loaded before style.css.
+ *
+ * One file, consumed everywhere: style.css references these custom properties and declares no
+ * color, spacing, font-size, radius, shadow or duration of its own. Changing the look of the
+ * product means editing this file and nothing else.
+ *
+ * Rules that keep this honest:
+ *   - One accent, #3DD8F5, spent at four sites per view and no more: the focus ring, the
+ *     primary action, the active navigation item, and interactive text (links and citation
+ *     links). Everything else is ink, paper, a rule, or a semantic status color.
+ *   - Dark is the default; light is the exception via prefers-color-scheme. The product runs
+ *     in warehouses and back offices, and dark is where its contrast ratios were tuned.
+ *   - System font stacks only. No webfonts, no font loading, no layout shift from a font.
+ *   - Motions are durations on tokens, so prefers-reduced-motion turns them all off by
+ *     setting them to 1ms in one place rather than fighting specificity with the CSS important keyword.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* ---- color: paper, ink, rules (dark first) ---- */
+  --paper: #0c1015;        /* the room: app background */
+  --paper-1: #11161d;      /* raised surfaces: cards, panels, tables */
+  --paper-2: #171e27;      /* recessed: code, excerpts, hovered fills */
+  --paper-3: #1e2732;      /* the lightest surface: hover states, wells */
+  --ink: #e8edf2;          /* primary text, 16.2:1 on paper */
+  --ink-2: #b3bfcb;        /* secondary text, 10.2:1 */
+  --ink-3: #8593a1;        /* tertiary text and labels, 6.1:1, AA for normal text */
+  --rule: #232c37;         /* hairlines */
+  --rule-2: #334050;       /* stronger borders, input edges */
+
+  /* ---- color: the one accent ---- */
+  --accent: #3dd8f5;
+  --accent-ink: #04252e;   /* text that sits on the accent, 9.4:1 */
+  --accent-text: #3dd8f5;  /* the accent as text on paper, 11.2:1 */
+
+  /* ---- color: semantics (status, not decoration) ---- */
+  --warn: #e5b567;
+  --warn-bg: #2a2111;
+  --bad: #f2999b;
+  --bad-bg: #2e1618;
+  --ok: #82cc9f;
+  --ok-bg: #12241a;
+
+  /* ---- spacing: a 4px scale, nothing off it ---- */
+  --space-1: 0.25rem;   /* 4 */
+  --space-2: 0.5rem;    /* 8 */
+  --space-3: 0.75rem;   /* 12 */
+  --space-4: 1rem;      /* 16 */
+  --space-5: 1.5rem;    /* 24 */
+  --space-6: 2rem;      /* 32 */
+  --space-7: 3rem;      /* 48 */
+  --space-8: 4rem;      /* 64 */
+
+  /* ---- type: a 1.25 major-third scale on a 15px base ---- */
+  --text-xs: 0.75rem;    /* labels over numbers, badges */
+  --text-sm: 0.875rem;   /* table bodies, secondary */
+  --text-md: 0.9375rem;  /* body text */
+  --text-lg: 1.125rem;   /* card and panel headings */
+  --text-xl: 1.375rem;   /* view headings */
+  --text-2xl: 1.75rem;   /* onboarding, stat values */
+  --leading-body: 1.55;
+  --leading-tight: 1.25;
+
+  /* ---- radii ---- */
+  --radius-sm: 4px;
+  --radius: 6px;
+  --radius-lg: 10px;
+
+  /* ---- elevation: shadows in a dark UI are depth, not decoration ---- */
+  --shadow-1: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-2: 0 4px 16px rgb(0 0 0 / 0.45);
+
+  /* ---- motion: 120-200ms, ease-out, and nowhere else ---- */
+  --dur-fast: 120ms;
+  --dur: 160ms;
+  --dur-slow: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0.2, 1);
+
+  /* ---- fonts: the operating system's, and nothing fetched ---- */
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* ---- measure ---- */
+  --content-max: 90rem;
+  --prose-max: 68ch;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --paper: #f4f6f8;
+    --paper-1: #ffffff;
+    --paper-2: #eceef1;
+    --paper-3: #e0e4e9;
+    --ink: #14181c;
+    --ink-2: #45525e;
+    --ink-3: #677381;
+    --rule: #d9dee3;
+    --rule-2: #c3cbd3;
+    /* The accent hue does not change with the theme; its readable text form does.
+       #067180 is #3dd8f5 darkened until it holds 5.7:1 on white (AA for normal text). */
+    --accent-ink: #04252e;
+    --accent-text: #067180;
+    --warn: #7a5200;
+    --warn-bg: #f8eed6;
+    --bad: #9b2226;
+    --bad-bg: #f9e7e8;
+    --ok: #1e6b45;
+    --ok-bg: #e4f2ea;
+    --shadow-1: 0 1px 2px rgb(20 24 28 / 0.08);
+    --shadow-2: 0 4px 16px rgb(20 24 28 / 0.12);
+  }
+}
+
+/* Motion off means durations off. One override, no important keyword, no selector war. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 1ms;
+    --dur: 1ms;
+    --dur-slow: 1ms;
+  }
+}

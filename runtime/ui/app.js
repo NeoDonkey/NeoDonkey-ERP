@@ -1,4 +1,4 @@
-// runtime/ui/app.js — state, routing and the kernel calls. The only file that both touches the
+// runtime/ui/app.js - state, routing and the kernel calls. The only file that both touches the
 // DOM and talks to the kernel; everything it renders it gets from viewmodel.js.
 //
 // Routing is `location.hash`, so the back button works and a colleague can be sent a link to a
@@ -32,7 +32,7 @@ export function createApp(options) {
   } = options;
 
   const prefs = loadPrefs();
-  // FD-9. The roles this peer actually HOLDS, from its signed peer record in the repo — not the
+  // FD-9. The roles this peer actually HOLDS, from its signed peer record in the repo - not the
   // roles the company has a word for. The selector offers a subset of this and nothing else, so a
   // stored preference naming a role that was never granted (or has been revoked) cannot survive a
   // reload and be sent to perform(), where it would be refused as `roles-not-held`.
@@ -101,7 +101,7 @@ export function createApp(options) {
 
   addEventListener('hashchange', () => {
     const next = parseRoute(location.hash);
-    // Keep half-typed values only while we stay on the same entity's form — a refusal
+    // Keep half-typed values only while we stay on the same entity's form - a refusal
     // navigates nowhere, so this preserves the retype-nothing property without leaking
     // one entity's values into another's form.
     if (state.pendingDoc && state.pendingDoc.entity !== next.entity) state.pendingDoc = null;
@@ -110,6 +110,9 @@ export function createApp(options) {
     state.diagnostics = null;
     state.filter = '';
     render();
+    // A navigation is a new screen: put keyboard focus on the content, not back at the top
+    // of the tab order.
+    shell.focusMain();
   });
 
   const openSource = (at) => {
@@ -126,7 +129,7 @@ export function createApp(options) {
     try {
       result = await kernel.perform(intent);
     } catch (err) {
-      // A throw from the kernel is not a refusal — it is a defect. Show it as one.
+      // A throw from the kernel is not a refusal - it is a defect. Show it as one.
       state.busy = false;
       state.refusal = refusalView([{ reason: `The runtime failed: ${err.message}`, at: null }],
         { model: kernel.model, sources: state.sources });
@@ -184,6 +187,11 @@ export function createApp(options) {
 
   function render() {
     const model = kernel.model;
+    // Views are rebuilt wholesale, so a re-render steals focus from whatever was being typed
+    // into (the list filter re-renders on every keystroke). Remember the focused control by
+    // its data-keep-focus marker and put focus, and the caret, back afterwards.
+    const keep = document.activeElement?.dataset?.keepFocus ?? null;
+    const caret = keep ? document.activeElement.selectionStart ?? null : null;
     // FD-9: the picker offers only roles this peer holds, and says where they came from.
     shell.setRole(navFor(model, state.role), state.role, (role) => {
       state.role = heldRole(role);
@@ -199,16 +207,26 @@ export function createApp(options) {
     });
     renderBanner();
 
-    // A refusal replaces the view it came from — it is the most important thing on screen,
+    // A refusal replaces the view it came from - it is the most important thing on screen,
     // not a toast in the corner.
     if (state.refusal) {
       shell.setMain(renderRefusal(state.refusal, {
         onOpenSource: openSource,
-        onDismiss: () => { state.refusal = null; render(); },
+        onDismiss: () => { state.refusal = null; render(); shell.focusMain(); },
       }));
       return;
     }
     shell.setMain(renderRoute());
+
+    if (keep) {
+      const again = shell.mainEl().querySelector(`[data-keep-focus="${keep}"]`);
+      if (again) {
+        again.focus();
+        if (caret !== null && typeof again.setSelectionRange === 'function') {
+          try { again.setSelectionRange(caret, caret); } catch { /* not a text control */ }
+        }
+      }
+    }
   }
 
   function renderRoute() {
@@ -408,11 +426,14 @@ function buildShell() {
   // FD-9: where the offered roles came from. On screen, not in a tooltip only.
   const roleProvenance = h.small({ class: 'muted role-provenance' });
   const identity = h.div({ class: 'identity' });
-  const navList = h.nav({ class: 'sidenav' });
-  const main = h.main({ class: 'main', id: 'main' });
+  const navList = h.nav({ class: 'sidenav', 'aria-label': 'Sections' });
+  // tabindex -1: a target for "skip to content" and for focus after navigation, never a tab stop.
+  const main = h.main({ class: 'main', id: 'main', tabindex: '-1' });
   const banner = h.div({ class: 'bannerslot' });
 
   const node = frag(
+    h.button({ class: 'skip-link', type: 'button', text: 'Skip to content',
+      on: { click: () => main.focus() } }),
     h.header({ class: 'topbar' },
       h.div({ class: 'brand' },
         h.span({ class: 'brand-mark', text: 'ND' }),
@@ -431,12 +452,12 @@ function buildShell() {
   return {
     node,
     /**
-     * FD-9 — the picker offers what this peer HOLDS, not what the company has a word for.
+     * FD-9 - the picker offers what this peer HOLDS, not what the company has a word for.
      *
      * Before this it listed every role in the operating model, and picking one made you that role:
      * the browser tab was asserting its own authority and the kernel believed it (COMPROMISES #21).
      * Now the list is the peer's recorded roles, and the provenance is on screen rather than
-     * implied — because "acting as managing-director" is a very different sentence depending on
+     * implied - because "acting as managing-director" is a very different sentence depending on
      * whether a company recorded that or a select element offered it.
      *
      * `held` is `kernel.myRoles()`. When it is empty the picker says so, names the file, and says
@@ -451,7 +472,7 @@ function buildShell() {
       if (roleShape !== shape) {
         roleShape = shape;
         replace(roleSelect,
-          h.option({ value: '', text: offered.length || unknown.length ? '— no role —' : '— none granted —' }),
+          h.option({ value: '', text: offered.length || unknown.length ? '(no role)' : '(none granted)' }),
           offered.map((r) => h.option({ value: r.name, text: r.title })),
           unknown.map((n) => h.option({ value: n, text: `${n} (not in the model)` })));
       }
@@ -478,22 +499,28 @@ function buildShell() {
           ? `folder: ${workspace.label}` : 'browser storage (OPFS)' }));
     },
     setBanner(content) { replace(banner, content); },
+    /** Where the content lives, for focus restoration after a wholesale re-render. */
+    mainEl() { return main; },
+    /** Move keyboard focus to the content after a navigation (not a tab stop, a landing). */
+    focusMain() { main.focus(); },
     setNav(nav, route, handlers) {
       const active = (kind, entity) => route.kind === kind
         && (entity === undefined || route.entity === entity);
+      const item = (isActive, text, onClick, title = null) => h.button({
+        class: isActive ? 'navitem is-active' : 'navitem',
+        type: 'button', text, title,
+        'aria-current': isActive ? 'page' : null,
+        on: { click: onClick },
+      });
       replace(navList,
-        h.button({ class: active('overview') ? 'navitem is-active' : 'navitem',
-          type: 'button', text: 'Overview', on: { click: handlers.onOverview } }),
+        item(active('overview'), 'Overview', handlers.onOverview),
         section('Your work', nav.work, handlers, route),
         section('Reference', nav.reference, handlers, route),
         h.div({ class: 'navgroup' },
           h.div({ class: 'navgroup-title', text: 'The company itself' }),
-          h.button({ class: active('model') || active('model-file') ? 'navitem is-active' : 'navitem',
-            type: 'button', text: 'Operating model', on: { click: handlers.onModel } }),
-          h.button({ class: active('log') ? 'navitem is-active' : 'navitem',
-            type: 'button', text: 'Transaction log', on: { click: handlers.onLog } }),
-          h.button({ class: active('runtime') ? 'navitem is-active' : 'navitem',
-            type: 'button', text: 'This runtime', on: { click: handlers.onRuntime } })));
+          item(active('model') || active('model-file'), 'Operating model', handlers.onModel),
+          item(active('log'), 'Transaction log', handlers.onLog),
+          item(active('runtime'), 'This runtime', handlers.onRuntime)));
     },
     setMain(content) { replace(main, content); },
   };
@@ -506,6 +533,7 @@ function section(title, entities, handlers, route) {
     entities.map((e) => h.button({
       class: route.entity === e.name ? 'navitem is-active' : 'navitem',
       type: 'button', title: `${e.fieldCount} fields`,
+      'aria-current': route.entity === e.name ? 'page' : null,
       on: { click: () => handlers.onEntity(e.name) },
     }, e.title)));
 }

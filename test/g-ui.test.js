@@ -293,6 +293,28 @@ test('a document’s human label is derived: name field, then business key, then
   assert.equal(displayLabel(null, slot).from, 'missing');
 });
 
+// Compromise #13's closure (issue #44) deleted the conventional candidate loop
+// ['name', 'title', 'label', 'description'] from displayLabel and columnsFor. The source guard
+// above pins the vocabulary by string search; this pins it by behaviour, which is what the
+// closure's own verification note asked for: an entity that declares nothing gets nothing from
+// a document that happens to carry a `name`.
+test('an entity with no declaration gets the id, never a conventional fallback', () => {
+  const undeclared = {
+    fields: new Map([
+      ['name', { name: 'name', type: 'text' }],
+      ['code', { name: 'code', type: 'text', required: true }],
+    ]),
+    identifiedBy: null,
+  };
+
+  // before #29 this returned { text: 'Gate West', from: 'name' }
+  assert.deepEqual(displayLabel({ id: 'X-1', name: 'Gate West' }, undeclared),
+    { text: 'X-1', id: 'X-1', from: 'id' });
+
+  // and before #29 `name` led the columns ahead of the required declared field
+  assert.deepEqual(columnsFor(undeclared).map((c) => c.name), ['id', 'code', 'name']);
+});
+
 test('field labels are typography, not semantics', () => {
   assert.equal(labelFor('shrinkage-value'), 'Shrinkage value');
   assert.equal(labelFor('gate-number'), 'Gate number');
