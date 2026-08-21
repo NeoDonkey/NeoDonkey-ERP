@@ -144,7 +144,7 @@ export function assertOid(oid) {
  * name ended in '/'. (That falls out of git sorting *index* paths: "foo.txt" vs
  * "foo/bar" compares '.' 0x2e against '/' 0x2f, so the file wins.) Get this wrong and
  * `git fsck` reports "contains unsorted entries".
- * @param {{mode:string, name:string, oid:OID}[]} e
+ * @param {{mode:string, name:string}} e
  */
 function sortKey(e) {
   return enc.encode(e.mode === '40000' ? `${e.name}/` : e.name);
@@ -191,7 +191,7 @@ export function decodeTree(bytes) {
     if (nul < 0) throw new Error('decodeTree: truncated entry (no name terminator)');
     if (nul + 21 > bytes.length) throw new Error('decodeTree: truncated entry (no oid)');
     out.push({
-      mode: dec.decode(bytes.subarray(0, sp)),
+      mode: dec.decode(bytes.subarray(at, sp)),
       name: dec.decode(bytes.subarray(sp + 1, nul)),
       oid: hex(bytes.subarray(nul + 1, nul + 21)),
     });
@@ -212,10 +212,10 @@ export function formatTz(minutes) {
   return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}${String(abs % 60).padStart(2, '0')}`;
 }
 
-/** @param {string} tz @returns {number} minutes */
+/** @param {string} tz @returns {number} */
 export function parseTz(tz) {
-  const m = /^([+-])(\d{2})(\d{2})$/.exec(String(tz));
-  if (!m) throw new Error(`parseTz: not a git timezone offset: ${JSON.stringify(tz)}`);
+  const m = /^([+-])(\d{2})(\d{2})$/.exec(tz);
+  if (!m) throw new Error(`parseTz: not a git timezone offset: ${tz}`);
   const minutes = Number(m[2]) * 60 + Number(m[3]);
   return m[1] === '-' ? -minutes : minutes;
 }
@@ -328,8 +328,8 @@ function asciiEquals(line, s) {
  * an unknown header is surfaced in `extra`, never silently dropped (Principle 6).
  * @param {Bytes} bytes
  * @returns {{tree:OID, parents:OID[], author:Identity, committer:Identity, time:number,
- *          tzOffsetMinutes:number, message:string, signature:string|null,
- *          extra:{key:string, value:string}[]}}
+ *           tzOffsetMinutes:number, message:string, signature:string|null,
+ *           extra:{key:string, value:string}[]}}
  */
 export function decodeCommit(bytes) {
   const text = dec.decode(bytes);
@@ -365,8 +365,7 @@ export function decodeCommit(bytes) {
       case 'parent': parents.push(value); break;
       case 'author': author = parseIdentityLine(value); break;
       case 'committer': committer = parseIdentityLine(value); break;
-      case 'gpgsig': committer = parseIdentityLine(value); break;
-      case 'gpgsig2': void 0; break;
+      case 'gpgsig': signature = value; break;
       default: extra.push({ key, value });
     }
   }
