@@ -11,13 +11,16 @@ Implemented German USt-VA ELSTER XML document structure serialization (`runtime/
 - Created `runtime/vat/ustva-elster.js`:
   - `serializeUstVaElsterXml({ header, gridTotals })`: Serializes aggregated USt-VA tax grid Kennziffern (Kz 81, Kz 86, Kz 41, Kz 66, Kz 83) into the official BMF ELSTER XML document format (`http://www.elster.de/elsterxml/schema/v1`).
   - Corrected Nutzdaten element spelling to `<Anmeldungssteuern>` per BMF ERiC XSD specification (`/Elster/DatenTeil/Nutzdatenblock/Nutzdaten/Anmeldungssteuern`).
-  - Parameterized header metadata options: `herstellerId` (default `"74931"`), `datenLieferant` (default `"NeoDonkey ERP"`), and `nutzdatenTicket` (default `"1"`).
-  - Strict header validation: validates 4-digit `FinanzamtNummer`, 11..13-digit `Steuernummer`, 4-digit `Jahr` (YYYY), and 2-digit `Zeitraum` (MM or 41..44).
-  - Exact BigInt minor-unit formatting for decimal VAT amounts (`Kz66`, `Kz83`) and truncated integer Euro formatting for taxable sales bases (`Kz81`, `Kz86`, `Kz41`) per UStG § 18 Abs. 1.
+  - Parameterized header metadata options: `herstellerId` (default `"74931"`), `datenLieferant` (default `"NeoDonkey ERP"`), `nutzdatenTicket` (default `"1"`), and `erstellungskosten` (default `"0"`).
+  - Strict header validation: validates 4-digit `FinanzamtNummer`, 13-digit `Steuernummer`, 4-digit `Jahr` (YYYY), and 2-digit `Zeitraum` (MM or 41..44).
+  - Exact BigInt minor-unit formatting for decimal VAT amounts (`Kz66`, `Kz83`) pinned to dot (`.`) per BMF ERiC Zahlenformat specification and truncated integer Euro formatting for taxable sales bases (`Kz81`, `Kz86`, `Kz41`) per UStG § 18 Abs. 1.
 - Updated `docs/decisions/2026-08-20-german-vat-ustva-return-and-elster-xml-schema.md`:
   - Added Errata section noting element spelling correction to `<Anmeldungssteuern>`.
+  - Updated verification method text to reference `<Anmeldungssteuern>`.
+- Updated `docs/COMPROMISES.md`:
+  - Added entry #26 under category **real work** for hardcoded placeholder submission header defaults (`herstellerId="74931"`, `datenLieferant="NeoDonkey ERP"`, `nutzdatenTicket="1"`, `erstellungskosten="0"`).
 - Created `test/ustva-elster-xml.test.js`:
-  - Unit tests verifying XML structure, namespaces, element generation, mandatory header validation, vendor parameterization, and source guard asserting no `parseFloat`, `Number(`, or `.toFixed` on money paths.
+  - Unit tests verifying XML structure, namespaces, element generation, mandatory header validation, vendor/ticket/erstellungskosten parameterization, and source guard asserting no `parseFloat`, `Number(`, or `.toFixed` on money paths.
 
 ## Verification
 

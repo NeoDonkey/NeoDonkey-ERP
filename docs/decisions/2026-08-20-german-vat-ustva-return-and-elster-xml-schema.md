@@ -31,7 +31,7 @@ How should NeoDonkey aggregate general ledger transactions for domestic German V
 
 ## Verification Method
 - **Tax Grid Aggregation Test:** Unit tests in `test/ustva-aggregation.test.js` post a series of general ledger journal entries (standard 19% sales, reduced 7% sales, intra-EU zero-rated supply, supplier invoices with 19% input tax) and assert that `aggregateUstVa(period)` correctly assigns amounts to Kz 81, Kz 86, Kz 41, Kz 66, and computes Kz 83 net balance without floating point arithmetic.
-- **ELSTER XML Serialization Test:** Unit tests in `test/ustva-elster-xml.test.js` pass an aggregated USt-VA result to `serializeUstVaElsterXml(config)` and validate XML tags, namespace declarations, required tax office attributes, and exact UTF-8 byte serialization.
+- **ELSTER XML Serialization Test:** Unit tests in `test/ustva-elster-xml.test.js` pass an aggregated USt-VA result to `serializeUstVaElsterXml(config)` and validate XML tags (`<Anmeldungssteuern>`, `<UStVA>`), namespace declarations, required tax office attributes, and exact UTF-8 byte serialization.
 
 ## What Must Land First
 
@@ -57,5 +57,5 @@ Filing the issue specifications defined below as open GitHub issues MUST land fi
 - **Constraints:** Zero dependencies, no build step, `node:*` only in `runtime/git/fs-node.js` and tests, no `Date.now()` or `Math.random()` in core logic, no business vocabulary in `runtime/`, no float in any monetary path.
 - **Labels:** `ready`, `area:runtime`, `p1`
 - **Verification Method:** Unit test in `test/ustva-elster-xml.test.js` provides aggregated tax grid totals and tax office metadata and asserts:
-  1. Serialized XML output contains valid `<Elster>`, `<Anmeldesteuern>`, `<UStVA>` elements with mandatory namespaces.
+  1. Serialized XML output contains valid `<Elster>`, `<Anmeldungssteuern>`, `<UStVA>` elements with mandatory namespaces.
   2. Kz elements `<Kz81>`, `<Kz86>`, `<Kz41>`, `<Kz66>`, `<Kz83>` are formatted with two-decimal string representations.

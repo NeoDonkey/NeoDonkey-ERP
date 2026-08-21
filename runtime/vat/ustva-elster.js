@@ -3,6 +3,10 @@
 // Serializes aggregated USt-VA tax grid Kennziffern (Kz 81, Kz 86, Kz 41, Kz 66, Kz 83)
 // into the official BMF ELSTER XML document structure (http://www.elster.de/elsterxml/schema/v1).
 //
+// Primary Source Citation:
+// - BMF ELSTER Schnittstellenbeschreibung "Anmeldung der Umsatzsteuer-Voranmeldung 2026 / ERiC Datenbankschema"
+// - ERiC Zahlenformat spec: Decimal amounts MUST use a dot (.) as the decimal separator without thousands separators.
+//
 // Non-negotiable constraints:
 // - Zero dependencies
 // - Browser-compatible ES module
@@ -11,6 +15,7 @@
 
 /**
  * Format BigInt minor units (e.g. 185000n cents) into exact 2-decimal string representation ("1850.00").
+ * Decimal separator is pinned to dot (.) per BMF ERiC Zahlenformat specification (no thousands separators).
  * Handles negative minor units correctly.
  *
  * @param {bigint|number} minorUnits
@@ -64,12 +69,13 @@ function escapeXml(str) {
  * @param {Object} options
  * @param {Object} options.header Header metadata for submission
  * @param {string} options.header.finanzamtNummer 4-digit tax office ID (e.g. "9198")
- * @param {string} options.header.steuernummer 11 to 13-digit German tax ID (e.g. "1981150000501")
+ * @param {string} options.header.steuernummer 13-digit standard German tax ID (e.g. "1981150000501")
  * @param {string} options.header.jahr 4-digit year (e.g. "2026")
  * @param {string} options.header.zeitraum 2-digit month ("01".."12") or quarter ("41".."44")
  * @param {string} [options.header.herstellerId] Registered software vendor ID issued by tax administration (default: "74931")
  * @param {string} [options.header.datenLieferant] Software/data provider name (default: "NeoDonkey ERP")
  * @param {string} [options.header.nutzdatenTicket] Transmission ticket ID (default: "1")
+ * @param {string} [options.header.erstellungskosten] Creation cost indicator attribute (default: "0")
  * @param {Object} [options.gridTotals] Aggregated tax grid totals
  * @param {bigint} [options.gridTotals.kz81NetMinor] Standard rate (19%) net base
  * @param {bigint} [options.gridTotals.kz81TaxMinor] Standard rate (19%) output VAT
@@ -93,13 +99,14 @@ export function serializeUstVaElsterXml({ header, gridTotals = {} }) {
     herstellerId = '74931',
     datenLieferant = 'NeoDonkey ERP',
     nutzdatenTicket = '1',
+    erstellungskosten = '0',
   } = header;
 
   if (!finanzamtNummer || !/^\d{4}$/.test(finanzamtNummer)) {
     throw new Error('FinanzamtNummer must be 4 digits');
   }
-  if (!steuernummer || !/^\d{11,13}$/.test(steuernummer)) {
-    throw new Error('Steuernummer must be 11 to 13 digits');
+  if (!steuernummer || !/^\d{13}$/.test(steuernummer)) {
+    throw new Error('Steuernummer must be 13 digits');
   }
   if (!jahr || !/^\d{4}$/.test(jahr)) {
     throw new Error('Jahr must be 4 digits (YYYY)');
@@ -131,7 +138,7 @@ export function serializeUstVaElsterXml({ header, gridTotals = {} }) {
     '      </NutzdatenHeader>',
     '      <Nutzdaten>',
     '        <Anmeldungssteuern>',
-    '          <UStVA erstellungskosten="0">',
+    `          <UStVA erstellungskosten="${escapeXml(erstellungskosten)}">`,
     `            <Jahr>${escapeXml(jahr)}</Jahr>`,
     `            <Zeitraum>${escapeXml(zeitraum)}</Zeitraum>`,
     `            <Steuernummer>${escapeXml(steuernummer)}</Steuernummer>`,

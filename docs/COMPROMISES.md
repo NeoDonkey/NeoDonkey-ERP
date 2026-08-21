@@ -44,12 +44,12 @@ reviewer exactly as readily as a true one.
 
 ## Summary
 
-**24 open entries. 12 closed.** Counted 2026-08-21.
+**25 open entries. 12 closed.** Counted 2026-08-21.
 
 | Category | Open | Entries |
 |---|---|---|
 | **our shortfall** | **1** (+1 named residual risk) | #24, #15 residual risk 7 |
-| real work | 13 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20, #25 |
+| real work | 14 | #3, #4, #4c, #4f, #5, #6, #7, #16, #17, #18, #19, #20, #25, #26 |
 | platform limit | 8 | #2, #8, #9, #10, #11, #12, #14, #15 |
 | manifesto or roadmap is wrong | 2 | #4e, #4i |
 | **closed** | **12** | #1, #4b, #4a, #4c-bis, #4d, FD-6, #4h, #22, #4g, #15 rr4, #21, #13 (Part 2) |
@@ -1220,6 +1220,24 @@ shape.
 **Where it bites:** Autonomous agent sessions running without GitHub API write permissions (e.g. `GITHUB_TOKEN` with issue-creation scopes) can research, write decision records, and craft complete issue specifications, but cannot invoke `gh issue create` or POST to the GitHub REST API to file open issues. Decision records written during such sessions contain complete issue specifications (title, primary source, constraints, labels, verification method), but the corresponding GitHub issues do not exist in the repo's open issue queue until filed by a human maintainer or a session with issue-creation credentials.
 
 **Exit path:** A human maintainer or a workflow with issue-creation write credentials files the specified issues from the decision record into GitHub, unblocking subsequent implementation sessions to claim them with `Closes #N`.
+
+---
+
+## #26 — Hardcoded placeholder submission header defaults in German USt-VA ELSTER XML serializer
+
+**Category: real work.**
+
+**Principle in tension:** `operating-model/` as the single source of truth for business configuration and vendor registration.
+
+**Where it bites:** `runtime/vat/ustva-elster.js` provides default fallback constants for tax transmission header metadata when omitted by the caller:
+- `herstellerId`: `"74931"` (placeholder software vendor registration ID issued by BMF tax administration);
+- `datenLieferant`: `"NeoDonkey ERP"` (software/data provider name string);
+- `nutzdatenTicket`: `"1"` (submission ticket ID string);
+- `erstellungskosten`: `"0"` (cost attribute on `<UStVA>`).
+
+**Why it is documented:** In production submissions to ERiC / ELSTER, `HerstellerID` MUST be a registered software vendor ID assigned directly by the German tax authority to the organization operating or distributing the software, and `DatenLieferant` MUST identify the submitting entity. The current default values allow local developer serialization and test verification without requiring prior registration.
+
+**Exit path:** Inject `herstellerId` and `datenLieferant` from the company's operating model / workspace configuration (`neodonkey.json` or `operating-model/README.md`), and pass `erstellungskosten` explicitly when submitting via ERiC.
 
 ---
 

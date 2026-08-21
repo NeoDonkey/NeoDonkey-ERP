@@ -28,6 +28,7 @@ test('serializeUstVaElsterXml generates valid ELSTER XML structure with header a
   assert.ok(xml.includes('<DatenTeil>'), '<DatenTeil> section present');
   assert.ok(xml.includes('<Nutzdatenblock>'), '<Nutzdatenblock> section present');
   assert.ok(xml.includes('<Anmeldungssteuern>'), '<Anmeldungssteuern> element present per ERiC XSD');
+  assert.ok(xml.includes('<UStVA erstellungskosten="0">'), 'UStVA element with default erstellungskosten attribute');
 
   // Verify header attributes/elements
   assert.ok(xml.includes('<FinanzamtNummer>9198</FinanzamtNummer>'), 'FinanzamtNummer present');
@@ -41,11 +42,11 @@ test('serializeUstVaElsterXml generates valid ELSTER XML structure with header a
   assert.ok(xml.includes('<Kz81>10000</Kz81>'), 'Kz81 present');
   assert.ok(xml.includes('<Kz86>5000</Kz86>'), 'Kz86 present');
   assert.ok(xml.includes('<Kz41>2000</Kz41>'), 'Kz41 present');
-  assert.ok(xml.includes('<Kz66>400.00</Kz66>'), 'Kz66 Vorsteuer present as string decimal');
-  assert.ok(xml.includes('<Kz83>1850.00</Kz83>'), 'Kz83 Tax payable present as string decimal');
+  assert.ok(xml.includes('<Kz66>400.00</Kz66>'), 'Kz66 Vorsteuer present as string decimal with dot');
+  assert.ok(xml.includes('<Kz83>1850.00</Kz83>'), 'Kz83 Tax payable present as string decimal with dot');
 });
 
-test('serializeUstVaElsterXml accepts custom vendor and ticket headers', () => {
+test('serializeUstVaElsterXml accepts custom vendor, ticket, and erstellungskosten headers', () => {
   const header = {
     finanzamtNummer: '9198',
     steuernummer: '1981150000501',
@@ -54,6 +55,7 @@ test('serializeUstVaElsterXml accepts custom vendor and ticket headers', () => {
     herstellerId: '99999',
     datenLieferant: 'Custom Tax Software GmbH',
     nutzdatenTicket: 'TICKET-12345',
+    erstellungskosten: '1',
   };
 
   const xml = serializeUstVaElsterXml({ header });
@@ -61,6 +63,7 @@ test('serializeUstVaElsterXml accepts custom vendor and ticket headers', () => {
   assert.ok(xml.includes('<HerstellerID>99999</HerstellerID>'), 'Custom HerstellerID injected');
   assert.ok(xml.includes('<DatenLieferant>Custom Tax Software GmbH</DatenLieferant>'), 'Custom DatenLieferant injected');
   assert.ok(xml.includes('<NutzdatenTicket>TICKET-12345</NutzdatenTicket>'), 'Custom NutzdatenTicket injected');
+  assert.ok(xml.includes('<UStVA erstellungskosten="1">'), 'Custom erstellungskosten attribute injected');
 });
 
 test('serializeUstVaElsterXml validates mandatory headers and rejects invalid inputs', () => {
@@ -80,7 +83,7 @@ test('serializeUstVaElsterXml validates mandatory headers and rejects invalid in
       header: { finanzamtNummer: '9198', steuernummer: '12345', jahr: '2026', zeitraum: '01' },
       gridTotals: {},
     });
-  }, /Steuernummer must be 11 to 13 digits/i);
+  }, /Steuernummer must be 13 digits/i);
 });
 
 test('serializeUstVaElsterXml source guard - no parseFloat, Number(, or toFixed on money paths in ustva-elster.js', () => {
