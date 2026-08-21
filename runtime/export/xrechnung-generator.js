@@ -7,7 +7,7 @@
  * Zero dependencies. Exact string & BigInt Money formatting via runtime/money/money.js.
  */
 
-import { toMoney } from '../money/money.js';
+import { toMoney, sum } from '../money/money.js';
 
 export class ValidationError extends Error {
   /**
@@ -96,6 +96,40 @@ function formatQuantityXml(qty, lineContext) {
 }
 
 /**
+ * Formats EN 16931 Postal Address XML block for Seller (BG-5) or Buyer (BG-8).
+ *
+ * @param {Object} address
+ * @param {string} roleName
+ * @returns {string}
+ */
+function formatPostalAddressXml(address, roleName) {
+  if (!address || typeof address !== 'object') {
+    throw new ValidationError(`missing-${roleName.toLowerCase()}-address`, `Missing mandatory ${roleName} Postal Address details (${roleName.toLowerCase()}.address)`);
+  }
+  if (!address.streetName || typeof address.streetName !== 'string' || address.streetName.trim() === '') {
+    throw new ValidationError(`missing-${roleName.toLowerCase()}-street`, `Missing mandatory ${roleName} Street Name (${roleName.toLowerCase()}.address.streetName)`);
+  }
+  if (!address.cityName || typeof address.cityName !== 'string' || address.cityName.trim() === '') {
+    throw new ValidationError(`missing-${roleName.toLowerCase()}-city`, `Missing mandatory ${roleName} City Name (${roleName.toLowerCase()}.address.cityName)`);
+  }
+  if (!address.postalZone || typeof address.postalZone !== 'string' || address.postalZone.trim() === '') {
+    throw new ValidationError(`missing-${roleName.toLowerCase()}-postal-code`, `Missing mandatory ${roleName} Postal Code (${roleName.toLowerCase()}.address.postalZone)`);
+  }
+  if (!address.countryCode || typeof address.countryCode !== 'string' || !/^[A-Z]{2}$/.test(address.countryCode.trim())) {
+    throw new ValidationError(`missing-${roleName.toLowerCase()}-country-code`, `Missing or invalid mandatory ${roleName} Country Code ISO alpha-2 (${roleName.toLowerCase()}.address.countryCode)`);
+  }
+
+  return `      <cac:PostalAddress>
+        <cbc:StreetName>${escapeXml(address.streetName.trim())}</cbc:StreetName>
+        <cbc:CityName>${escapeXml(address.cityName.trim())}</cbc:CityName>
+        <cbc:PostalZone>${escapeXml(address.postalZone.trim())}</cbc:PostalZone>
+        <cac:Country>
+          <cbc:IdentificationCode>${escapeXml(address.countryCode.trim().toUpperCase())}</cbc:IdentificationCode>
+        </cac:Country>
+      </cac:PostalAddress>`;
+}
+
+/**
  * Generates an EN 16931 UBL 2.1 XML invoice string from a domain invoice object.
  *
  * @param {Object} invoice Domain invoice object
@@ -128,7 +162,7 @@ export function generateXRechnungUblXml(invoice) {
 
   const currency = invoice.currency.trim();
 
-  // BT-27 & BT-31: Seller
+  // BT-27, BT-31, BG-5: Seller
   if (!invoice.seller || typeof invoice.seller !== 'object') {
     throw new ValidationError('missing-supplier', 'Missing mandatory seller (AccountingSupplierParty) details');
   }
@@ -138,21 +172,25 @@ export function generateXRechnungUblXml(invoice) {
   if (!invoice.seller.vatId || typeof invoice.seller.vatId !== 'string' || invoice.seller.vatId.trim() === '') {
     throw new ValidationError('missing-bt-31', 'Missing mandatory Business Term BT-31 (Seller VAT Identifier / seller.vatId)');
   }
+  const sellerAddressXml = formatPostalAddressXml(invoice.seller.address, 'Seller');
 
-  // BT-44: Buyer
+  // BT-44, BG-8: Buyer
   if (!invoice.buyer || typeof invoice.buyer !== 'object') {
     throw new ValidationError('missing-customer', 'Missing mandatory buyer (AccountingCustomerParty) details');
   }
   if (!invoice.buyer.name || typeof invoice.buyer.name !== 'string' || invoice.buyer.name.trim() === '') {
     throw new ValidationError('missing-bt-44', 'Missing mandatory Business Term BT-44 (Buyer Name / buyer.name)');
   }
+  const buyerAddressXml = formatPostalAddressXml(invoice.buyer.address, 'Buyer');
 
   // Invoice Lines
   if (!Array.isArray(invoice.lines) || invoice.lines.length === 0) {
     throw new ValidationError('missing-invoice-lines', 'At least one invoice line in lines array is required');
   }
 
+  const lineGroups = new Map();
   const linesXmlParts = [];
+
   for (let i = 0; i < invoice.lines.length; i++) {
     const line = invoice.lines[i];
     const lineContext = `line ${i + 1}`;
@@ -175,8 +213,22 @@ export function generateXRechnungUblXml(invoice) {
     }
     const itemPriceXml = formatMoneyXml(line.itemPrice, currency, `line ${lineId} itemPrice`);
 
-    const vatCategory = (line.vatCategory && typeof line.vatCategory === 'string') ? line.vatCategory.trim() : 'S';
-    const vatPercent = (line.vatPercent !== undefined && line.vatPercent !== null) ? String(line.vatPercent).trim() : '19';
+    // BT-151 & BT-152: VAT Category and Rate on Line Item
+    if (!line.vatCategory || typeof line.vatCategory !== 'string' || line.vatCategory.trim() === '') {
+      throw new ValidationError('missing-bt-151', `Missing mandatory Business Term BT-151 (VAT Category Code) for ${lineContext}`);
+    }
+    if (line.vatPercent === undefined || line.vatPercent === null || String(line.vatPercent).trim() === '') {
+      throw new ValidationError('missing-bt-152', `Missing mandatory Business Term BT-152 (VAT Category Rate) for ${lineContext}`);
+    }
+    const vatCategory = line.vatCategory.trim();
+    const vatPercent = String(line.vatPercent).trim();
+
+    // Aggregate line amounts by VAT category & rate for TaxSubtotal calculation
+    const groupKey = `${vatCategory}:${vatPercent}`;
+    if (!lineGroups.has(groupKey)) {
+      lineGroups.set(groupKey, { vatCategory, vatPercent, netAmounts: [] });
+    }
+    lineGroups.get(groupKey).netAmounts.push(line.lineNetAmount);
 
     linesXmlParts.push(`  <cac:InvoiceLine>
     <cbc:ID>${escapeXml(lineId)}</cbc:ID>
@@ -213,10 +265,16 @@ export function generateXRechnungUblXml(invoice) {
   let taxSubtotalsXml = '';
   if (Array.isArray(invoice.taxSubtotals) && invoice.taxSubtotals.length > 0) {
     taxSubtotalsXml = invoice.taxSubtotals.map((sub, idx) => {
+      if (!sub.vatCategory || typeof sub.vatCategory !== 'string' || sub.vatCategory.trim() === '') {
+        throw new ValidationError('missing-bt-118', `Missing mandatory Business Term BT-118 (VAT Category) for taxSubtotals[${idx}]`);
+      }
+      if (sub.vatPercent === undefined || sub.vatPercent === null || String(sub.vatPercent).trim() === '') {
+        throw new ValidationError('missing-bt-119', `Missing mandatory Business Term BT-119 (VAT Rate) for taxSubtotals[${idx}]`);
+      }
       const taxableXml = formatMoneyXml(sub.taxableAmount, currency, `taxSubtotals[${idx}].taxableAmount`);
       const taxXml = formatMoneyXml(sub.taxAmount, currency, `taxSubtotals[${idx}].taxAmount`);
-      const category = (sub.vatCategory && typeof sub.vatCategory === 'string') ? sub.vatCategory.trim() : 'S';
-      const percent = (sub.vatPercent !== undefined && sub.vatPercent !== null) ? String(sub.vatPercent).trim() : '19';
+      const category = sub.vatCategory.trim();
+      const percent = String(sub.vatPercent).trim();
       return `    <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${taxableXml}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="${escapeXml(currency)}">${taxXml}</cbc:TaxAmount>
@@ -230,18 +288,26 @@ export function generateXRechnungUblXml(invoice) {
     </cac:TaxSubtotal>`;
     }).join('\n');
   } else {
-    // Default single TaxSubtotal from invoice totals (Standard rate 19%)
-    taxSubtotalsXml = `    <cac:TaxSubtotal>
-      <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${taxExclusiveAmountXml}</cbc:TaxableAmount>
-      <cbc:TaxAmount currencyID="${escapeXml(currency)}">${taxAmountXml}</cbc:TaxAmount>
+    // Generate TaxSubtotal items dynamically from line item VAT groupings
+    const subtotalsParts = [];
+    for (const group of lineGroups.values()) {
+      const groupTaxableSum = sum(group.netAmounts, currency);
+      const groupTaxableXml = formatMoneyXml(groupTaxableSum, currency, `taxSubtotal[${group.vatCategory}] taxableAmount`);
+      // For single group, taxAmountXml matches overall taxAmountXml
+      const groupTaxXml = lineGroups.size === 1 ? taxAmountXml : formatMoneyXml(group.taxAmount || '0.00 ' + currency, currency, `taxSubtotal[${group.vatCategory}] taxAmount`);
+      subtotalsParts.push(`    <cac:TaxSubtotal>
+      <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${groupTaxableXml}</cbc:TaxableAmount>
+      <cbc:TaxAmount currencyID="${escapeXml(currency)}">${groupTaxXml}</cbc:TaxAmount>
       <cac:TaxCategory>
-        <cbc:ID>S</cbc:ID>
-        <cbc:Percent>19</cbc:Percent>
+        <cbc:ID>${escapeXml(group.vatCategory)}</cbc:ID>
+        <cbc:Percent>${escapeXml(group.vatPercent)}</cbc:Percent>
         <cac:TaxScheme>
           <cbc:ID>VAT</cbc:ID>
         </cac:TaxScheme>
       </cac:TaxCategory>
-    </cac:TaxSubtotal>`;
+    </cac:TaxSubtotal>`);
+    }
+    taxSubtotalsXml = subtotalsParts.join('\n');
   }
 
   const buyerRefXml = invoice.buyerReference
@@ -267,6 +333,7 @@ export function generateXRechnungUblXml(invoice) {
       <cac:PartyName>
         <cbc:Name>${escapeXml(invoice.seller.name.trim())}</cbc:Name>
       </cac:PartyName>
+${sellerAddressXml}
       <cac:PartyTaxScheme>
         <cbc:CompanyID>${escapeXml(invoice.seller.vatId.trim())}</cbc:CompanyID>
         <cac:TaxScheme>
@@ -279,12 +346,13 @@ export function generateXRechnungUblXml(invoice) {
     <cac:Party>
       <cac:PartyName>
         <cbc:Name>${escapeXml(invoice.buyer.name.trim())}</cbc:Name>
-      </cac:PartyName>${buyerVatXml}
+      </cac:PartyName>
+${buyerAddressXml}${buyerVatXml}
     </cac:Party>
   </cac:AccountingCustomerParty>
   <cac:TaxTotal>
     <cbc:TaxAmount currencyID="${escapeXml(currency)}">${taxAmountXml}</cbc:TaxAmount>
-\n${taxSubtotalsXml}
+${taxSubtotalsXml}
   </cac:TaxTotal>
   <cac:LegalMonetaryTotal>
     <cbc:LineExtensionAmount currencyID="${escapeXml(currency)}">${lineExtensionAmountXml}</cbc:LineExtensionAmount>
