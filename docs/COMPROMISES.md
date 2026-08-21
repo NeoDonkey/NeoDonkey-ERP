@@ -1448,7 +1448,7 @@ claimed all thirteen roles because of the master-data promotion path gap (#4h).
 updated to run under strict authorization:
 - `strictAuthorization` was flipped to `true`.
 - The blanket claim of all thirteen roles was removed, and instead only the 8 roles actually held
-  by Sarah are granted in the genesis commit (FD-9), allowing her to act under only her legitimate,
+  by Sarah are granted in the genesis commit (FD-9), allowing her to act with only her legitimate,
   recorded roles.
 
 **How that was verified — 2026-08-12, by running it:** `demo/sarah.mjs` runs successfully and
@@ -1521,7 +1521,7 @@ Not compromises. Recorded here because the contract is the thing agents build ag
 undocumented amendment is how two modules end up disagreeing.
 
 | # | Amendment | Raised by | Reason |
-|---|---|---|---|
+|---|-----------|-----------|--------|
 | 1 | `repo.log()` returns the exact signed `payload` bytes | CTO | Browser-side chain verification with no git or ssh binary (Appendix XI) |
 | 2 | `FsAdapter` gains optional `chmod(path, mode)` — real in `fs-node.js`, no-op in `fs-opfs.js` | B | The only place the contract actively blocked a security requirement: a private key file would otherwise inherit the umask |
 | 3 | `KeyPair` is `{publicKey, privateKey, comment?}`, pinned in the shared vocabulary | B | The kernel passes it between modules |
