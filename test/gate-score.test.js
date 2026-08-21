@@ -70,10 +70,17 @@ const CONDITIONS = [
   {
     number: 6,
     title: 'It speaks to the outside world',
-    status: 'red',
-    evidence: [],
-    missing: 'DATEV EXTF export, XRechnung/EN-16931 invoice generator/parser, and inbound dialect implementation.',
-    description: 'DATEV EXTF export, XRechnung/EN-16931 e-invoicing, inbound dialect (e.g. Shopify), and cross-peer same-commit property.',
+    status: 'green',
+    evidence: [
+      'test/datev-extf-posting.test.js',
+      'test/xrechnung.test.js',
+      'test/xrechnung-parser.test.js',
+      'test/inbound-shopify.test.js',
+      'test/sync-relay.test.js',
+      'demo/sarah.mjs',
+    ],
+    missing: null,
+    description: 'DATEV EXTF export (runtime/export/datev.js), XRechnung/EN-16931 generator and parser (runtime/export/xrechnung.js, xrechnung-parser.js), the Shopify inbound dialect (runtime/inbound/shopify.js) committing through the real kernel, and the cross-peer same-commit property asserted byte-identical across two OS processes in test/sync-relay.test.js and exercised end to end in demo/sarah.mjs.',
   },
   {
     number: 7,

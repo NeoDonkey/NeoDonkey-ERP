@@ -7,9 +7,9 @@ Generated and verified by `test/gate-score.test.js`. Do not edit by hand.
 
 ## Summary
 
-- **Green (Met):** 6 / 10
+- **Green (Met):** 7 / 10
 - **Partial:** 1 / 10
-- **Red (Unmet):** 3 / 10
+- **Red (Unmet):** 2 / 10
 
 ---
 
@@ -57,13 +57,17 @@ Group key management, sealed documents, cryptographic DEK destruction for GDPR e
 - `test/crypto-reader.test.js`
 - `test/readme-claims.test.js`
 
-### Condition 6 — It speaks to the outside world [RED]
+### Condition 6 — It speaks to the outside world [GREEN]
 
-DATEV EXTF export, XRechnung/EN-16931 e-invoicing, inbound dialect (e.g. Shopify), and cross-peer same-commit property.
+DATEV EXTF export (runtime/export/datev.js), XRechnung/EN-16931 generator and parser (runtime/export/xrechnung.js, xrechnung-parser.js), the Shopify inbound dialect (runtime/inbound/shopify.js) committing through the real kernel, and the cross-peer same-commit property asserted byte-identical across two OS processes in test/sync-relay.test.js and exercised end to end in demo/sarah.mjs.
 
-**Evidence:** None
-
-**Missing:** DATEV EXTF export, XRechnung/EN-16931 invoice generator/parser, and inbound dialect implementation.
+**Evidence:**
+- `test/datev-extf-posting.test.js`
+- `test/xrechnung.test.js`
+- `test/xrechnung-parser.test.js`
+- `test/inbound-shopify.test.js`
+- `test/sync-relay.test.js`
+- `demo/sarah.mjs`
 
 ### Condition 7 — Scale is measured, not asserted [RED]
 
