@@ -12,6 +12,8 @@
  */
 
 import { buildXRechnung } from './xrechnung.js';
+import { money, fromMinor, toMinor } from '../money/money.js';
+import { divRound } from '../money/decimal.js';
 
 /**
  * @typedef {Object} InvoiceData
@@ -24,6 +26,7 @@ import { buildXRechnung } from './xrechnung.js';
  * @property {Seller} seller
  * @property {LineItem[]} lineItems
  * @property {string} vatRate — e.g. "19"
+ * @property {string} buyerReference — BT-10 BuyerReference / Leitweg-ID, mandatory for the XRechnung half of the bundle
  * @property {string} netTotal — formatted amount, e.g. "1.000,00 EUR"
  * @property {string} vatAmount — formatted amount
  * @property {string} grossTotal — formatted amount
@@ -144,23 +147,27 @@ export async function buildInvoiceBundle(data) {
   const invoice = {
     id: data.invoiceNumber,
     'invoice-number': data.invoiceNumber,
+    'customer-reference': data.buyerReference,
     'issue-date': data.invoiceDate,
     'due-date': addDays(data.invoiceDate, parseInt(data.paymentDays || '14', 10)),
     currency: 'EUR',
     lines: data.lineItems.map(item => {
-      const unitPrice = parseGermanAmount(item.unitPrice);
-      const quantity = item.quantity;
-      const netAmount = unitPrice * quantity;
-      const vatRate = parseInt(data.vatRate, 10);
-      const vatAmount = netAmount * (vatRate / 100);
+      // Money discipline (FD-1): German display amounts parse exactly into BigInt
+      // minor units; net and VAT are integer arithmetic with commercial half-up
+      // rounding. No parseFloat, no Number arithmetic, no toFixed.
+      const unitPrice = parseGermanMoney(item.unitPrice);
+      const qty = quantityParts(item.quantity);
+      const netMinor = divRound(toMinor(unitPrice) * qty.units, 10n ** BigInt(qty.scale), 'half-up');
+      const vatRateBps = BigInt(parseInt(data.vatRate, 10)) * 100n;
+      const vatMinor = divRound(netMinor * vatRateBps, 10000n, 'half-up');
       return {
         description: item.description,
-        quantity: quantity,
+        quantity: item.quantity,
         'unit-code': mapUnitToUnitCode(item.unit),
         'unit-price': unitPrice,
-        'net-amount': netAmount,
-        'vat-amount': vatAmount,
-        'vat-rate': vatRate,
+        'net-amount': fromMinor(netMinor, 'EUR'),
+        'vat-amount': fromMinor(vatMinor, 'EUR'),
+        'vat-rate': parseInt(data.vatRate, 10),
       };
     }),
   };
@@ -210,11 +217,30 @@ function mapUnitToUnitCode(unit) {
   return map[unit] || 'C62';
 }
 
-// Helper: parse German formatted amount ("1.000,00 EUR") to number
-function parseGermanAmount(str) {
-  if (!str) return 0;
-  const num = str.replace(/\./g, '').replace(/,/g, '.').replace(/[^0-9.]/g, '');
-  return parseFloat(num) || 0;
+// Helper: parse a German display amount ("1.000,00 EUR") into Money, exactly.
+// String surgery only: thousand dots removed, decimal comma becomes a point.
+// Anything unparseable is refused, never coerced.
+function parseGermanMoney(str) {
+  if (typeof str !== 'string' || str.trim() === '') {
+    throw new Error(`invoice-html: expected a German amount string like "1.000,00 EUR", got ${String(str)}`);
+  }
+  const m = str.trim().match(/^(-?[\d.]+(?:,\d+)?)\s*([A-Z]{3})?$/);
+  if (!m) throw new Error(`invoice-html: cannot parse German amount ${JSON.stringify(str)} exactly — refusing to guess`);
+  const canonical = m[1].replace(/\./g, '').replace(',', '.') + ' ' + (m[2] || 'EUR');
+  return money(canonical);
+}
+
+// Helper: split a quantity into exact BigInt parts (units x 10^-scale).
+// Integers pass through; decimal JS numbers go through String(), which renders
+// the shortest exact decimal, so 1.5 becomes 15/10 — never a float path.
+function quantityParts(q) {
+  if (Number.isInteger(q)) return { units: BigInt(q), scale: 0 };
+  const s = String(q);
+  if (!/^-?\d+(\.\d+)?$/.test(s)) {
+    throw new Error(`invoice-html: quantity ${JSON.stringify(q)} is not an exact decimal; pass an integer or exact decimal`);
+  }
+  const [i, f = ''] = s.split('.');
+  return { units: BigInt(i + f), scale: f.length };
 }
 
 // Helper: add days to a YYYY-MM-DD date
