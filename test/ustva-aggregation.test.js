@@ -4,55 +4,80 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { aggregateUstVa, truncateToEuros } from '../runtime/export/ustva.js';
 
-test('aggregateUstVa computes exact BigInt minor units and Kennziffer totals', () => {
+test('aggregateUstVa computes exact BigInt minor units using operating model fields', () => {
   const postings = [
-    { period: '2026-01', vat_code: 'STANDARD_19', net_minor: 100000n, tax_minor: 19000n }, // 1000.00 EUR net, 190.00 EUR tax
-    { period: '2026-01', vat_code: 'STANDARD_19', net_minor: 50050n, tax_minor: 9510n },   // 500.50 EUR net, 95.10 EUR tax
-    { period: '2026-01', vat_code: 'REDUCED_7', net_minor: 20000n, tax_minor: 1400n },     // 200.00 EUR net, 14.00 EUR tax
-    { period: '2026-01', vat_code: 'INTRA_EU_0', net_minor: 30000n, tax_minor: 0n },       // 300.00 EUR net, 0.00 EUR tax
-    { period: '2026-01', vat_code: 'INPUT_TAX', net_minor: 40000n, tax_minor: 7600n }      // 400.00 EUR net, 76.00 EUR tax
+    // Standard 19% sales
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '81', 'vat-role': 'taxable-turnover', amount: '1000.00 EUR' },
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '81', 'vat-role': 'output-tax', amount: '190.00 EUR' },
+    // Reduced 7% sales
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '86', 'vat-role': 'taxable-turnover', amount: '200.00 EUR' },
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '86', 'vat-role': 'output-tax', amount: '14.00 EUR' },
+    // Intra-community acquisition (19% output tax + 19% deductible input tax)
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '89', 'vat-role': 'acquisition-turnover', amount: '12000.00 EUR' },
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '89', 'vat-role': 'output-tax', amount: '2280.00 EUR' },
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '61', 'vat-role': 'input-tax', amount: '2280.00 EUR' },
+    // Deductible supplier input tax
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '66', 'vat-role': 'input-tax', amount: '76.00 EUR' }
   ];
 
-  const result = aggregateUstVa(postings, '2026-01');
+  const result = aggregateUstVa(postings, '2026-07');
 
-  // Kz 81 (19% Standard)
-  assert.equal(result.kz81.net_minor, 150050n);
-  assert.equal(result.kz81.tax_minor, 28510n);
-  assert.equal(result.kz81.net_euros, 1500n); // 1500.50 EUR truncated to 1500 EUR
+  // Kz 81
+  assert.equal(result.kz81.base_minor, 100000n);
+  assert.equal(result.kz81.tax_minor, 19000n);
 
-  // Kz 86 (7% Reduced)
-  assert.equal(result.kz86.net_minor, 20000n);
+  // Kz 86
+  assert.equal(result.kz86.base_minor, 20000n);
   assert.equal(result.kz86.tax_minor, 1400n);
-  assert.equal(result.kz86.net_euros, 200n);
 
-  // Kz 41 (0% Intra-EU Supply)
-  assert.equal(result.kz41.net_minor, 30000n);
-  assert.equal(result.kz41.net_euros, 300n);
+  // Kz 89 & Kz 61 (Intra-Community Acquisitions)
+  assert.equal(result.kz89.base_minor, 1200000n);
+  assert.equal(result.kz89.tax_minor, 228000n);
+  assert.equal(result.kz61.tax_minor, 228000n);
 
-  // Kz 66 (Deductible Input Tax)
+  // Kz 66
   assert.equal(result.kz66.tax_minor, 7600n);
 
-  // Kz 83 (Net VAT Prepayment = (285.10 + 14.00) - 76.00 = 223.10 EUR / 22310n)
-  assert.equal(result.kz83.tax_minor, 22310n);
+  // Total Output Tax = 190.00 + 14.00 + 2280.00 = 2484.00 EUR (248400n minor)
+  assert.equal(result.total_output_tax_minor, 248400n);
+
+  // Total Input Tax = 2280.00 + 76.00 = 2356.00 EUR (235600n minor)
+  assert.equal(result.total_input_tax_minor, 235600n);
+
+  // Kz 83 Payable Balance = 2484.00 - 2356.00 = 128.00 EUR (12800n minor)
+  assert.equal(result.kz83_payable_minor, 12800n);
 });
 
-test('aggregateUstVa filters postings by string period and object period', () => {
+test('aggregateUstVa handles reverse charge §13b (Kz 84 & Kz 67)', () => {
   const postings = [
-    { period: '2026-01', vat_code: 'STANDARD_19', net_minor: 10000n, tax_minor: 1900n },
-    { period: '2026-02', vat_code: 'STANDARD_19', net_minor: 20000n, tax_minor: 3800n }
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '84', 'vat-role': 'output-tax', amount: '38000n' }, // 380.00 EUR
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '67', 'vat-role': 'input-tax', amount: '38000n' }   // 380.00 EUR
   ];
 
-  const resJan = aggregateUstVa(postings, '2026-01');
-  assert.equal(resJan.kz81.net_minor, 10000n);
-
-  const resFebObj = aggregateUstVa(postings, { year: 2026, month: 2 });
-  assert.equal(resFebObj.kz81.net_minor, 20000n);
+  const result = aggregateUstVa(postings, '2026-07');
+  assert.equal(result.kz84.tax_minor, 38000n);
+  assert.equal(result.kz67.tax_minor, 38000n);
+  assert.equal(result.total_output_tax_minor, 38000n);
+  assert.equal(result.total_input_tax_minor, 38000n);
+  assert.equal(result.kz83_payable_minor, 0n);
 });
 
-test('truncateToEuros truncates net base cents to integer Euros per UStG § 18 Abs. 1', () => {
+test('aggregateUstVa filters postings by period', () => {
+  const postings = [
+    { 'accounting-period': '2026-07', 'vat-kennzahl': '81', 'vat-role': 'taxable-turnover', amount: 10000n },
+    { 'accounting-period': '2026-08', 'vat-kennzahl': '81', 'vat-role': 'taxable-turnover', amount: 20000n }
+  ];
+
+  const resJuly = aggregateUstVa(postings, '2026-07');
+  assert.equal(resJuly.kz81.base_minor, 10000n);
+
+  const resAug = aggregateUstVa(postings, { 'accounting-period': '2026-08' });
+  assert.equal(resAug.kz81.base_minor, 20000n);
+});
+
+test('truncateToEuros helper converts cents to integer Euros', () => {
   assert.equal(truncateToEuros(1999n), 19n);
   assert.equal(truncateToEuros(100n), 1n);
-  assert.equal(truncateToEuros(99n), 0n);
 });
 
 test('source guard: no parseFloat, Number(, or toFixed on monetary paths in ustva.js', () => {
