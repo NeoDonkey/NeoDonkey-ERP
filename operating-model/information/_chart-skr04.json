@@ -1,0 +1,29 @@
+{
+  "standard": "skr04",
+  "display-name": "DATEV SKR04 — onboarding subset, fiscal year 2026",
+  "ledger-currency": "EUR",
+  "comment": "Minimal-but-real subset of DATEV SKR04 for company onboarding, per docs/decisions/2026-08-21-chart-of-accounts-template-onboarding-and-opening-balance-initialization.md. The same coverage as _chart-skr03.json in balance-sheet order: assets first, then equity and liabilities, then revenue and expenses. Contains every account the decision record names: EBK 9000, AR 9008, AP 9009 (identical numbers in both standards). Completeness grows by adding rows; the validator in runtime/onboarding/chart-of-accounts.js keeps every row honest.",
+  "accounts": [
+    { "account-number": "1140", "name": "Waren", "account-type": "asset", "normal-balance": "debit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": true },
+    { "account-number": "1200", "name": "Forderungen aus Lieferungen und Leistungen", "account-type": "asset", "normal-balance": "debit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "customer", "manual": true },
+    { "account-number": "1406", "name": "Abziehbare Vorsteuer 19 %", "account-type": "asset", "normal-balance": "debit", "statement-section": "balance-sheet", "vat-role": "input-tax", "vat-kennzahl": "66", "vat-rate-percent": 19, "reconciliation-account-for": "none", "manual": true },
+    { "account-number": "1600", "name": "Kasse", "account-type": "asset", "normal-balance": "debit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": false },
+    { "account-number": "1800", "name": "Bank", "account-type": "asset", "normal-balance": "debit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "bank", "manual": true },
+    { "account-number": "2900", "name": "Gezeichnetes Kapital", "account-type": "equity", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": true },
+    { "account-number": "2970", "name": "Gewinnvortrag vor Verwendung", "account-type": "equity", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": true },
+    { "account-number": "3200", "name": "Darlehen", "account-type": "liability", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": false },
+    { "account-number": "3300", "name": "Verbindlichkeiten aus Lieferungen und Leistungen", "account-type": "liability", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "supplier", "manual": true },
+    { "account-number": "3806", "name": "Umsatzsteuer 19 %", "account-type": "liability", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "output-tax", "vat-kennzahl": "81", "vat-rate-percent": 19, "reconciliation-account-for": "none", "manual": true },
+    { "account-number": "9000", "name": "Saldenvorträge Sachkonten", "account-type": "equity", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": true, "opening-balance-role": "general" },
+    { "account-number": "9008", "name": "Saldenvorträge Debitoren", "account-type": "equity", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": true, "opening-balance-role": "receivables" },
+    { "account-number": "9009", "name": "Saldenvorträge Kreditoren", "account-type": "equity", "normal-balance": "credit", "statement-section": "balance-sheet", "vat-role": "none", "reconciliation-account-for": "none", "manual": true, "opening-balance-role": "payables" },
+    { "account-number": "4400", "name": "Erlöse 19 % USt", "account-type": "revenue", "normal-balance": "credit", "statement-section": "income-statement", "vat-role": "taxable-turnover", "vat-kennzahl": "81", "vat-rate-percent": 19, "reconciliation-account-for": "none", "manual": false },
+    { "account-number": "5200", "name": "Wareneingang 19 % Vorsteuer", "account-type": "expense", "normal-balance": "debit", "statement-section": "income-statement", "vat-role": "none", "vat-rate-percent": 19, "reconciliation-account-for": "none", "manual": false },
+    { "account-number": "6300", "name": "Sonstige betriebliche Aufwendungen", "account-type": "expense", "normal-balance": "debit", "statement-section": "income-statement", "vat-role": "none", "reconciliation-account-for": "none", "manual": false }
+  ],
+  "control-totals": {
+    "account-count": 16,
+    "by-statement-section": { "balance-sheet": 13, "income-statement": 3 },
+    "by-account-type": { "asset": 5, "liability": 3, "equity": 5, "revenue": 1, "expense": 2 }
+  }
+}
