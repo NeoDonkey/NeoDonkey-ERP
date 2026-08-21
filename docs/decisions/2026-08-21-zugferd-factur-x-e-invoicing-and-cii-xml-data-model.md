@@ -8,12 +8,17 @@ How should NeoDonkey model ZUGFeRD 2.2 / Factur-X v1.0.06 hybrid PDF/XML e-invoi
 ## Answer
 
 1. **ZUGFeRD 2.2 / Factur-X Profile Alignment & Standard Compliance:**
-   - ZUGFeRD 2.2 (developed by FeRD in Germany) and Factur-X 1.0.06 (developed by FNFE-MPE in France) are technically identical specifications for hybrid e-invoicing.
+   - ZUGFeRD 2.2 (developed by FeRD in Germany, March 2022) and Factur-X 1.0.06 (developed by FNFE-MPE in France) are technically identical specifications for hybrid e-invoicing.
    - The XML payload MUST conform to the UN/CEFACT XML CrossIndustryInvoice (CII) D16B schema (namespace `urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100`).
-   - The default target profile for NeoDonkey e-invoice generation and validation MUST be the **EN 16931 (COMFORT)** profile (`urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:en16931`), which satisfies mandatory e-invoicing requirements across Germany (XRechnung equivalence), France, and the EU.
+   - The default target profile for NeoDonkey hybrid e-invoice generation and validation MUST be the **EN 16931 (COMFORT)** profile (`urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:en16931`). This profile satisfies mandatory domestic B2B e-invoicing requirements in Germany under UStG § 14 (effective Jan 1, 2025) and France.
+   - **B2G Distinction & Relationship to XRechnung:** The EN 16931 COMFORT profile is *not* identical to German public sector XRechnung (which is a national CIUS extension requiring additional mandatory fields like `BT-10` Leitweg-ID). German B2G transactions require XRechnung (specified in `docs/decisions/2026-08-18-en16931-xrechnung-e-invoicing-semantic-data-model.md`), whereas ZUGFeRD 2.2 EN 16931 COMFORT satisfies general domestic B2B transactions.
    - Lower profiles (MINIMUM, BASIC WL, BASIC) and higher profiles (EXTENDED) MUST be recognized during inbound XML parsing and validated according to their declared profile identifier (`Guidance/ID`).
 
-2. **CII D16B XML Structure & Mandatory Business Term Mapping:**
+2. **CII D16B Syntax Choice & Migration Path:**
+   - ZUGFeRD 2.2 / Factur-X 1.0.06 uses UN/CEFACT CII **D16B** syntax binding (CEN/TS 16931-3-3:2017).
+   - ZUGFeRD 2.3 / Factur-X 1.0.07 (released Sept 2024) updated the syntax binding to UN/CEFACT CII **D22B** to better align `BG-3` cardinality rules. NeoDonkey adopts ZUGFeRD 2.2 / D16B as the initial parser baseline due to widespread legacy compatibility in existing German B2B software, while maintaining forward compatibility for D22B parsing.
+
+3. **CII D16B XML Structure & Mandatory Business Term Mapping:**
    - **Root Element:** `rsm:CrossIndustryInvoice`
    - **ExchangedDocumentContext (`rsm:ExchangedDocumentContext`):**
      - Profile Identifier: `ram:Guidance/ram:ID` (e.g. `urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:en16931`).
@@ -38,19 +43,22 @@ How should NeoDonkey model ZUGFeRD 2.2 / Factur-X v1.0.06 hybrid PDF/XML e-invoi
          - Grand Total Amount (`BT-112`): `ram:GrandTotalAmount`
          - Due Payable Amount (`BT-115`): `ram:DuePayableAmount`
 
-3. **Monetary Values & Decimal Precision (FD-1):**
+4. **Monetary Values & Decimal Precision (FD-1):**
    - No `Number` or floating-point conversion is permitted anywhere in CII XML parsing or generation.
    - All amounts in XML (`ram:GrandTotalAmount`, `ram:ChargeAmount`, etc.) MUST be parsed into integer minor units (`BigInt` cents) using exact string manipulation.
    - Arithmetic validations (`BT-112 == BT-109 + BT-110`, `BT-109 == sum(LineTotalAmount)`) MUST be enforced on `BigInt` minor units before accepting inbound CII invoices.
 
-4. **PDF/A-3 Hybrid Attachment Specification:**
-   - In hybrid ZUGFeRD / Factur-X documents, the CII XML file MUST be attached into a PDF/A-3 (ISO 19005-3) file with exact filename `factur-x.xml` (or `zugferd-invoice.xml` for legacy ZUGFeRD 1.x compatibility).
+5. **PDF/A-3 Hybrid Attachment Specification:**
+   - In hybrid ZUGFeRD / Factur-X documents, the CII XML file MUST be attached into a PDF/A-3 (ISO 19005-3) file with exact filename `factur-x.xml` (or `ZUGFeRD-invoice.xml` for legacy ZUGFeRD 1.x / 2.0 compatibility).
    - Relationship attribute MUST be set to `/AFRelationship /Alternative`.
 
 ## Source
 - **Primary Source (European E-Invoicing Standard):** EN 16931-1:2017 (Electronic invoicing - Part 1: Semantic data model of the core elements of an electronic invoice) and CEN/TS 16931-3-3:2017 (Syntax binding for UN/CEFACT XML Industry Invoice D16B).
-- **Primary Source (ZUGFeRD / Factur-X Specification):** Forum elektronische Rechnung Deutschland (FeRD) / FNFE-MPE: *ZUGFeRD 2.2 / Factur-X 1.0.06 Specification* (March 2024), Profile Specification & XML Schema Bindings.
-- **Primary Source (German Tax Law):** Umsatzsteuergesetz (UStG) § 14 Abs. 1 & 2 (E-Invoicing obligation from Jan 1, 2025).
+- **Primary Source (ZUGFeRD / Factur-X Specification):** Forum elektronische Rechnung Deutschland (FeRD) / FNFE-MPE: *ZUGFeRD 2.2 / Factur-X 1.0.06 Specification* (March 2022) and *ZUGFeRD 2.3 / Factur-X 1.0.07 Specification* (September 2024).
+- **Primary Source (German Tax Law):** Umsatzsteuergesetz (UStG) § 14 Abs. 1 & 2 (E-Invoicing obligation for domestic B2B transactions from Jan 1, 2025).
+
+## What Would Have to Change for the Answer to Change
+- **Migration to ZUGFeRD 2.3 / CII D22B:** If the German FeRD and French FNFE-MPE formally deprecate ZUGFeRD 2.2 / CII D16B in favor of ZUGFeRD 2.3 / CII D22B, or if German tax authorities require D22B schema validation for domestic B2B compliance, the generator output profile MUST be updated to target UN/CEFACT CII D22B XML bindings.
 
 ## Verification Method
 - **Unit Test Verification:** Unit test suite in `test/zugferd-cii-parser.test.js` generates and parses valid UN/CEFACT CII XML strings for ZUGFeRD 2.2 / Factur-X invoices, verifies mandatory Business Terms, validates arithmetic sum invariants on `BigInt` minor units, and asserts explicit `ValidationError` thrown on missing mandatory terms or corrupt XML structure.
