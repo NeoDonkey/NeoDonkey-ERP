@@ -16,6 +16,8 @@ import assert from 'node:assert/strict';
 import { memFs } from '../runtime/git/fs.js';
 import { objectStore } from '../runtime/git/objects.js';
 import { deflate } from '../runtime/git/zlib.js';
+import { open } from '../runtime/kernel.js';
+import { generateIdentity } from '../runtime/identity/ed25519.js';
 
 const enc = new TextEncoder();
 
@@ -76,3 +78,63 @@ function concat(...arrays) {
   for (const a of arrays) { out.set(a, at); at += a.length; }
   return out;
 }
+
+// ---------------------------------------------------------------------------------------------
+// F-2: reopening a sealed workspace with the `sealed` option works, and still refuses a lie
+// ---------------------------------------------------------------------------------------------
+
+const clockFrom = (iso) => {
+  let t = Date.parse(iso);
+  return () => (t += 1000);
+};
+
+async function founder(local, name) {
+  const email = `${local}@neodonkey.eu`;
+  return {
+    name, email,
+    keyPair: await generateIdentity({ comment: email }),
+  };
+}
+
+const reopen = (fs, who, extra) => open({
+  fs,
+  identity: { name: who.name, email: who.email, keyPair: who.keyPair },
+  clock: clockFrom('2026-08-21T12:00:00Z'),
+  tzOffsetMinutes: 120,
+  ...extra,
+});
+
+test('F-2: sealed reopen agrees when the table means the same thing in another order', async () => {
+  const fs = memFs();
+  const sarah = await founder('sarah', 'Sarah Weber');
+
+  // Genesis records the sealed table. `board` before `hr`, alphabetically backwards on purpose.
+  await reopen(fs, sarah, { sealed: { salary: ['board', 'hr'] } });
+
+  // Before the fix this died with `ReferenceError: normalizeSealedTable is not defined`.
+  // The caller writes the same fact in a different order; the workspace must agree.
+  const k = await reopen(fs, sarah, { sealed: { salary: ['hr', 'board'] } });
+  assert.ok(k, 'reopen with an equivalent sealed table must succeed');
+});
+
+test('F-2: sealed reopen still refuses a table that disagrees with the record', async () => {
+  const fs = memFs();
+  const sarah = await founder('sarah', 'Sarah Weber');
+
+  await reopen(fs, sarah, { sealed: { salary: ['hr'] } });
+
+  // Dropping an entity is the dangerous direction: the caller would believe customer documents
+  // are sealed while the repository never recorded that.
+  await assert.rejects(
+    () => reopen(fs, sarah, { sealed: { salary: ['hr'], customer: ['hr'] } }),
+    /repository decides/,
+  );
+  // And the silent-plaintext direction from the comment in readSettings: the caller believes
+  // salary is sealed, the workspace recorded nothing of the kind.
+  const fs2 = memFs();
+  await reopen(fs2, sarah, {});
+  await assert.rejects(
+    () => reopen(fs2, sarah, { sealed: { salary: ['hr'] } }),
+    /repository decides/,
+  );
+});
