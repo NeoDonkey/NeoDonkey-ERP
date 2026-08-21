@@ -1,0 +1,773 @@
+/**
+ * NeoDonkey — the kernel. The headless core (Principle 7).
+ *
+ * Everything above this file is a disposable artifact: the browser UI, an MCP server,
+ * an AI conversation, a CLI. They all call the same functions. There is no "UI logic"
+ * anywhere else in the system, because there is nothing here that a UI could hold that
+ * this file does not already hold.
+ *
+ * The flow of a business event, end to end:
+ *
+ *   intent  ──▶ operating model (deterministic rules, Appendix XII)
+ *                     │
+ *                     ├── refused ──▶ violations, quoted by file and line. No commit.
+ *                     │
+ *                     └── allowed ──▶ changes (trigger + all consequents)
+ *                                          │
+ *                                          ▼
+ *                              ONE signed git commit (Appendix VIII: atomic by nature)
+ *                                          │
+ *                                          ▼
+ *                              local index updated (a view, never truth)
+ *
+ * No dependencies. Runs unchanged in Node 22+ and in a browser.
+ */
+
+import { initRepo, repo as openRepo } from './git/repo.js';
+import { decodeCommit, decodeTree } from './git/objects.js';
+import { parseOperatingModel } from './polism/parse.js';
+import { evaluate } from './polism/execute.js';
+import { materialize, update as updateIndex, parseDocPath } from './read/index.js';
+import { session as liveSession } from './live/session.js';
+import { hlc } from './live/hlc.js';
+import { signPayload, verifyPayload } from './identity/sshsig.js';
+import { exportPublicSsh } from './identity/ed25519.js';
+import {
+  cosignPayload, cosignTrailer, payloadWithCosignatures, verifyCommitSignatures, matchDistinct,
+} from './identity/cosign.js';
+import {
+  SEQUENCE_ENTITY, collectSeries, periodOf, sequenceId, allocate,
+  sequenceTrailer, readSequenceTrailers, auditIssuance, assertAuthoritative,
+} from './truth/sequence.js';
+// Appendix VII, reached from the front door. Nothing below re-implements a single line of
+// `runtime/crypto/` — every one of these names is used exactly as that directory defines it, which
+// is the whole reason this file grew by options rather than by a subsystem.
+import {
+  keyringFromRepo, decryptingReader, documentBytes, DEFAULT_NAME_FIELD,
+} from './crypto/reader.js';
+import {
+  createGroup as mintGroup, addMember, removeMember, rotateGroup as mintEpoch,
+  offboard as offboardAndReseal, manifestFile,
+} from './crypto/groups.js';
+import { seal, sealedPath, isEnvelope, inspect as inspectEnvelope } from './crypto/envelope.js';
+import {
+  createSubjectKey, subjectRecordFile, storeSubjectKey, loadSubjectKey,
+  eraseSubject as destroySubjectKey, SUBJECT_FORMAT,
+} from './crypto/shred.js';
+import {
+  CryptoError, CRYPTO_PATHS, enrolment as mintEnrolment, parseJsonBytes,
+} from './crypto/keys.js';
+
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+/** Where things live in the repo. One convention, shared by every module. */
+export const PATHS = {
+  doc: (entity, id) => `documents/${entity}/${id}.json`,
+  peer: (email) => `peers/${email.replace(/[^a-zA-Z0-9._@-]/g, '_')}.json`,
+  operatingModel: 'operating-model/',
+  /**
+   * The workspace's own settings, written in the genesis commit and never afterwards.
+   *
+   * FD-7: default-deny is a change of *meaning*, so it cannot be a runtime flag that a caller
+   * flips — a 2027 folder must keep behaving like a 2027 folder under a 2029 runtime. The
+   * setting therefore belongs to the repository, decided once, signed into genesis, and visible
+   * to anyone who opens the folder. A workspace created before this file existed has no file,
+   * and its absence means exactly what it meant then: default-allow.
+   */
+  settings: 'neodonkey.json',
+  /**
+   * Where Appendix VII's public files live: group manifests, enrolments, subject *records*,
+   * erasure records. Re-exported from `runtime/crypto/keys.js` rather than restated, because two
+   * tables that can disagree about where a group manifest lives is the defect this project has
+   * already shipped three times. Nothing in this table is secret and no wrapped subject key is
+   * ever written to any path in it — that is the vault's job, and the vault is not the repo.
+   */
+  crypto: CRYPTO_PATHS,
+};
+
+/**
+ * The field a decrypted document carries its plaintext name in, once the decrypting reader has put
+ * it back. Re-exported so a UI can render "salary 2027-Q3-anna" for a document whose id on disk is
+ * a keyed hash, without importing `runtime/crypto/`.
+ */
+export const SEALED_NAME = DEFAULT_NAME_FIELD;
+
+/** The settings a workspace records about itself at genesis. */
+const SETTINGS_VERSION = 1;
+
+/**
+ * The marker that says "this directory is the source checkout, not a company". Its only job is to
+ * stop `open()` writing a genesis commit into our own repository. See the guard in `open()`.
+ */
+const DEV_MARKER = '.neodonkey-dev';
+
+/**
+ * Does a workspace already exist here? Answered WITHOUT calling initRepo, so the dev-marker guard
+ * can refuse before a single byte of `.git/` is written. Deliberately the same resolution
+ * `repo.head()` performs — symbolic ref, then the ref file — and nothing more.
+ */
+async function existingHead(fs) {
+  const raw = await fs.read('.git/HEAD');
+  if (!raw) return null;
+  const text = dec.decode(raw).trim();
+  const oid = text.startsWith('ref: ')
+    ? dec.decode((await fs.read(`.git/${text.slice(5).trim()}`)) ?? new Uint8Array()).trim()
+    : text;
+  return /^[0-9a-f]{40}$/.test(oid) ? oid : null;
+}
+
+const json = (value) => enc.encode(JSON.stringify(value, null, 2) + '\n');
+const unjson = (bytes) => JSON.parse(dec.decode(bytes));
+
+/**
+ * Open a NeoDonkey workspace. Creates it if empty (the genesis commit carries the
+ * operating model and the opening peer's public key — from that commit on, the repo
+ * knows what the company is and who is allowed to speak for it).
+ *
+ * @param {{
+ *   fs: import('./git/fs.js').FsAdapter,
+ *   identity: { name: string, email: string, keyPair: CryptoKeyPair },
+ *   seed?: Map<string,string>,        // operating-model files for a fresh workspace
+ *   clock?: () => number,            // injected: determinism is a non-negotiable
+ *   tzOffsetMinutes?: number,
+ *   nodeId?: string,
+ *   strictAuthorization?: boolean,   // FD-7. Default TRUE for a new workspace; for an existing
+ *                                    // one the repo decides and this option may only agree.
+ *   sequences?: object,              // FD-6 series declarations, recorded at genesis
+ *   fourEyes?: object,               // signature requirements, keyed "<op> <entity>", at genesis
+ *   roles?: string[],                // FD-9. The opening peer's roles, recorded in its signed peer
+ *                                    // record in the genesis commit — the ROOT GRANT this company's
+ *                                    // whole authority tree hangs from. Omit it and the founder
+ *                                    // holds nothing and can perform nothing any rule governs;
+ *                                    // that is the correct default and it fails closed.
+ *   allowDevWorkspace?: boolean,     // bypass the .neodonkey-dev guard. For testing the guard.
+ *   encryption?: {privateKey: CryptoKey, publicKey?: CryptoKey, curve?: string},
+ *                                    // Appendix VII. This peer's personal X25519 pair, alongside
+ *                                    // (never instead of) its Ed25519 signing pair. Supplying it
+ *                                    // turns on TWO things and nothing else: the index is built
+ *                                    // through a decrypting reader, so this peer indexes exactly
+ *                                    // what it can open; and perform({sealFor}) can write sealed
+ *                                    // documents. Omit it and the workspace behaves precisely as
+ *                                    // it did before this option existed — a sealed document is
+ *                                    // opaque and counted, never guessed at.
+ *   sealed?: Record<string, string[]>,
+ *                                    // Appendix VII. Which entities this company records as
+ *                                    // confidential: `{ salary: ['hr'] }`, recorded at genesis and
+ *                                    // signed. A caller may then add groups and may never drop
+ *                                    // one, and a workspace that declares an entity confidential
+ *                                    // refuses to write one at all without a key pair. Same
+ *                                    // reasoning as `fourEyes`: a control a caller can relax by
+ *                                    // forgetting an argument is not a control.
+ *   vault?: object,                  // the ONE mutable store, from `crypto/shred.js`'s vault().
+ *                                    // Needed only for shreddable subject keys (GDPR Art. 17).
+ *                                    // It must NOT live inside the repository: an append-only
+ *                                    // store cannot hold key material you may have to destroy.
+ * }} options
+ */
+export async function open(options) {
+  const {
+    fs,
+    identity,
+    seed = null,
+    clock = () => Date.now(),
+    tzOffsetMinutes = 0,
+    nodeId = identity.email,
+  } = options;
+
+  const me = { name: identity.name, email: identity.email };
+  const keyPair = identity.keyPair;
+  const sign = (payload) => signPayload(keyPair, payload, 'git');
+  const now = () => Math.floor(clock() / 1000);
+  const sharedClock = hlc(nodeId, clock);
+
+  // A workspace must never be created inside the NeoDonkey source checkout. It happened once
+  // during v0.1 development: a genesis commit landed on top of our own history and every source
+  // file showed as untracked. The guard is an explicit marker file and nothing else — no "does
+  // this look like a source tree" heuristic, because Appendix II deliberately allows the runtime
+  // to live next to the data in the same repo, so a workspace root holding `runtime/` is
+  // legitimate for a real customer. Genesis only: opening an existing workspace is untouched.
+  if (options.allowDevWorkspace !== true && await fs.read(DEV_MARKER)) {
+    if (!await existingHead(fs)) {
+      throw new Error(
+        `refusing to create a NeoDonkey workspace here: this directory contains ${DEV_MARKER}, `
+        + 'which marks it as the NeoDonkey source checkout rather than a company.\n'
+        + '  A workspace written into the source tree hijacks its git repository.\n'
+        + '  Use a temp directory (tests), OPFS or a folder the user picked (browser), or an '
+        + 'explicit path (mcp/server.mjs, demo/sarah.mjs).\n'
+        + '  Pass allowDevWorkspace: true only to test this guard itself.');
+    }
+  }
+
+  await initRepo(fs);
+  const repo = openRepo(fs);
+
+  /** Full working state of the repo as path -> bytes. The commit unit is the whole tree. */
+  let files = new Map();
+  let head = await repo.head();
+
+  /** @type {object} the workspace's recorded settings; frozen once read. */
+  let settings;
+
+  if (head) {
+    for (const [path, oid] of await repo.readTreeAtHead()) {
+      files.set(path, await repo.readBlob(oid));
+    }
+    settings = readSettings(files, options);
+
+    // The setting is read from HEAD, because a company must be able to change it — but only as a
+    // visible, signed act, never by quietly editing a file. So a workspace that once recorded a
+    // setting is checked against its own genesis commit, and a *weakening* (strict → permissive)
+    // is refused. Strengthening is allowed, and recorded as a warning.
+    //
+    // The genesis walk costs a full log traversal, so it only runs in the one case that could hide
+    // the attack: a settings file that says permissive. A strict workspace and a pre-strict
+    // workspace with no file at all both skip it.
+    if (settings.neodonkey >= SETTINGS_VERSION && !settings.authorization.strict) {
+      const genesis = (await repo.log(Infinity)).at(-1);
+      if (genesis && /^NeoDonkey-Authorization: strict$/m.test(genesis.message)) {
+        throw new Error(
+          `${PATHS.settings} says authorization.strict = false, but this workspace's genesis commit `
+          + `(${genesis.oid}) records "NeoDonkey-Authorization: strict".\n`
+          + '  The setting decides what every rule in the model means, so weakening it is refused '
+          + 'rather than honoured. Whoever changed it did so in a signed commit — find it with '
+          + `\`git log -p -- ${PATHS.settings}\` — and revert it, or start a new workspace.`);
+      }
+    }
+  } else {
+    // Genesis. Appendix X, day 1: she types her name, a key pair is generated, and she
+    // exists in the NeoDonkey universe. Everything she does from now on is signed.
+    const publicSsh = await exportPublicSsh(keyPair, me.email);
+    files.set(PATHS.peer(me.email), json({
+      name: me.name, email: me.email, publicKeySsh: publicSsh, joinedAt: now(),
+      ...(options.roles ? { roles: [...options.roles] } : {}),
+    }));
+    settings = Object.freeze({
+      neodonkey: SETTINGS_VERSION,
+      authorization: { strict: options.strictAuthorization !== false },
+      sequences: options.sequences ? { ...options.sequences } : {},
+      fourEyes: options.fourEyes ? { ...options.fourEyes } : {},
+      sealed: options.sealed ? { ...options.sealed } : {},
+    });
+    files.set(PATHS.settings, json(settings));
+    if (seed) {
+      for (const [path, text] of seed) files.set(path, enc.encode(text));
+    }
+    head = await repo.commit({
+      files, message: genesisMessage(me, settings, options.roles), author: me,
+      time: now(), tzOffsetMinutes, sign,
+    });
+    await repo.checkout();
+  }
+
+  // ---- the operating model: the company as text, parsed into executable rules
+  let model, modelErrors, modelWarnings;
+  const loadModel = () => {
+    const sources = new Map();
+    for (const [path, bytes] of files) {
+      if (path.startsWith(PATHS.operatingModel) && path.endsWith('.md')) {
+        sources.set(path, dec.decode(bytes));
+      }
+    }
+    const parsed = parseOperatingModel(sources);
+    model = parsed.model;
+    modelErrors = parsed.errors.filter((e) => e.severity === 'error');
+    // A warning nobody can read is the same as no warning. The shipped model has 20 of them,
+    // each saying "this rule will never fire" — which is exactly the kind of thing a COO must
+    // be able to see, so they are part of the public surface, not a parser detail.
+    modelWarnings = parsed.errors.filter((e) => e.severity !== 'error');
+    series = null;   // the model may declare number series; recompute lazily
+    return parsed;
+  };
+
+  // ---- the read path: a view, always rebuildable from git
+  const warnings = [];
+
+  // ---- FD-6: the number series this workspace knows about, from the model then the settings.
+  /** @type {Map<string, import('./truth/sequence.js').SeriesDeclaration>|null} */
+  let series = null;
+  const seriesMap = () => {
+    if (!series) {
+      const got = collectSeries(model, settings);
+      series = got.series;
+      for (const message of got.errors) {
+        if (!warnings.some((w) => w.message === message)) {
+          warnings.push({ at: 'sequences', message });
+        }
+      }
+    }
+    return series;
+  };
+  const seriesFor = (entity) => {
+    for (const decl of seriesMap().values()) if (decl.entity === entity) return decl;
+    return null;
+  };
+
+  // -------------------------------------------------------------------------------------------
+  // Appendix VII — the front door.
+  //
+  // COMPROMISES #5, narrowed by agent CRYPTO to exactly this: `runtime/crypto/` was finished and
+  // proven, and `kernel.open()` hard-coded `readBlob: (oid) => repo.readBlob(oid)` so nothing in it
+  // was reachable from the product. Encryption worked at the layer and not through the front door,
+  // which is the fourth time this project has built a capability with no way in.
+  //
+  // Two substitutions close it, and they are deliberately the *only* two:
+  //
+  //   READING   the index's `readBlob` is wrapped by `decryptingReader`. That is the entire
+  //             mechanism. The read path was built so decryption is not a parameter of it
+  //             ("Decryption is not implemented here and must not be. It is injected"), so a peer
+  //             indexes what it can open and — because the read path only ever creates an entity
+  //             bucket for a document it could *read* — the entity bucket for what it cannot open
+  //             is never created. Absent, not filtered.
+  //
+  //   WRITING   `perform({sealFor})` seals what the commit writes. Declarative: the caller names
+  //             groups, never keys, epochs or paths. Auditable: the sealing lands in a
+  //             `NeoDonkey-Sealed:` trailer inside the signed payload, and is independently
+  //             readable from the blob's own public header (`inspectSealed()`), so "which groups
+  //             could open this document" is answerable in 2057 by someone who does not trust us.
+  //             And it is not forgettable: `neodonkey.json`'s `sealed` table, signed into genesis,
+  //             records which entities are confidential, so a caller can widen that and never
+  //             narrow it (`requiredSealing()`). A control you defeat by leaving out an argument
+  //             would be the fifth half-capability in this project, not the first.
+  //
+  // Everything else here is group administration — create, add, remove, rotate, offboard, erase —
+  // each as one signed commit, because access control that is not in `git log` is not auditable.
+  // Every one of them delegates to `runtime/crypto/groups.js` or `shred.js`; this file contains no
+  // cryptography and must never contain any.
+  // -------------------------------------------------------------------------------------------
+
+  const encryption = options.encryption ?? null;
+  const theVault = options.vault ?? null;
+
+  /** @type {object|null} what this peer can unwrap, rebuilt whenever a manifest changes. */
+  let keyring = null;
+  /** @type {ReturnType<typeof decryptingReader>|null} the reader the last full build went through. */
+  let sealedReads = null;
+  /** The commit that build read, which is NOT `index.stats().builtFrom` once an update has run. */
+  let sealedReadsAt = null;
+
+  /**
+   * (Re)build the keyring from the manifests in `files`.
+   *
+   * A manifest that cannot be parsed **refuses**, and the refusal is propagated rather than
+   * softened, because agent CRYPTO's reasoning is the load-bearing part: *"skipping it would
+   * silently downgrade this peer to a non-member"* — and a peer that silently believes it is not in
+   * the HR group builds an index with no salaries in it and reports no problem at all. A workspace
+   * that will not open is a loud, fixable state; a workspace that opens with less in it than it
+   * should have is neither.
+   */
+  async function rebuildKeyring() {
+    if (!encryption) { keyring = null; return null; }
+    try {
+      keyring = await keyringFromRepo({
+        files, principal: me.email, encryption, ...(theVault ? { vault: theVault } : {}),
+      });
+    } catch (e) {
+      if (!(e instanceof CryptoError)) throw e;
+      throw new Error(
+        `this workspace's encryption groups cannot be read, so it will not open: ${e.message}\n`
+        + '  A group manifest that cannot be parsed is refused rather than skipped: skipping it '
+        + 'would silently downgrade this peer to a non-member, and an index that is quietly missing '
+        + 'every salary reports no problem at all.\n'
+        + `  The file is in the history — \`git log -p -- ${CRYPTO_PATHS.group('')}\` — so repair it `
+        + 'there rather than working around it.');
+    }
+    return keyring;
+  }
+
+  await rebuildKeyring();
+
+  loadModel();
+  let index = await buildIndex(head);
+
+  /**
+   * Plaintext for documents this peer sealed in the commit it is currently writing, keyed by the
+   * sealed path. The incremental index update reads through it, so a member's own index carries the
+   * document it just wrote instead of the envelope bytes now on disk.
+   *
+   * This is not a cache and never survives a commit: it is cleared as soon as the update that
+   * consumes it is done. Decrypting bytes we encrypted a microsecond ago would be the same work
+   * twice with a second chance to disagree.
+   */
+  const stagedPlain = new Map();
+
+  async function buildIndex(builtFrom) {
+    // The one substitution. `keyring === null` reproduces v0.1 byte for byte.
+    const plainReader = async (oid) => await repo.readBlob(oid);
+    sealedReads = keyring
+      ? decryptingReader({ readBlob: plainReader, keyring, nameField: SEALED_NAME })
+      : null;
+    const at = builtFrom ?? await repo.head();
+    sealedReadsAt = at;
+    return materialize({
+      readTree: async () => await repo.readTreeAtHead(),
+      readBlob: sealedReads ?? plainReader,
+      builtFrom: at,
+    });
+  }
+
+  /** What the rule engine is allowed to see. Backed by the index, never by the UI. */
+  const world = () => ({
+    get: (entity, id) => index.get(entity, id),
+    find: (entity, pred) => index.where(entity, pred),
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // One writer at a time. Every commit reads HEAD, the index and the number sequences, then
+  // writes all three; two overlapping perform() calls would interleave those reads and issue the
+  // same document number twice. This is not a lock in the database sense — it is the statement
+  // that a peer produces one commit per business event, serially (Appendix VIII, simple case).
+  // -------------------------------------------------------------------------------------------
+  let queue = Promise.resolve();
+  const serialized = (work) => {
+    const run = queue.then(work, work);
+    // Keep the chain alive whatever `work` does, without swallowing the caller's result.
+    queue = run.then(() => undefined, () => undefined);
+    return run;
+  };
+
+  // -------------------------------------------------------------------------------------------
+  // FD-7 — the kernel side of default-deny.
+  //
+  // COMPROMISES #4c-bis, verified against the real 28-rule model: an actor with NO ROLES could
+  // create, update and delete any entity no rule happens to mention. The hole is not in any
+  // module; it is in the *default*, which is why 213 tests never asked about it (standing rule 4:
+  // ask what happens when nothing applies).
+  //
+  // Coverage is the boundary. An (entity, operation) pair is governed if a rule triggers on it,
+  // or if the entity declares a default authority for that operation. In a strict workspace,
+  // anything else is refused by name — the entity, the operation, and the file to edit.
+  // -------------------------------------------------------------------------------------------
+
+  /**
+   * Read an entity-level authority declaration. Grammar v2 (agent G2) is growing
+   * `## Authorized by` scoped per operation on an entity file; the shape is read tolerantly here
+   * so the kernel gains the enforcement the moment the parser gains the section, and neither
+   * agent has to edit the other's file. Tracks `runtime/polism/grammar.md` §6.
+   *
+   * @returns {{covered:boolean, roles:string[]|null, at:string|null}}
+   */
+  function entityAuthority(def, op) {
+    if (!def) return { covered: false, roles: null, at: null };
+    let at = def.source ? `${def.source.file}:${def.source.line}` : null;
+    // grammar.md §16.1 as agent G2 landed it: `def.authority = { byOp, source }`. The older and
+    // looser shapes are kept because the coverage boundary must not depend on which day this file
+    // and grammar.md were last read.
+    const candidates = [
+      def.authority && def.authority.byOp,
+      def.operationAuthority,
+      def.authority,
+      def.authorizedBy,
+    ];
+    if (def.authority && def.authority.source) {
+      at = `${def.authority.source.file}:${def.authority.source.line}`;
+    }
+    // grammar v2's per-operation value is `{ roles, line }`; older sketches used a bare list.
+    // One reader for both, so the coverage boundary never depends on which it is.
+    const rolesOfEntry = (entry) => {
+      if (!entry) return null;
+      if (Array.isArray(entry)) return [...entry];
+      if (Array.isArray(entry.roles)) return [...entry.roles];
+      return null;
+    };
+    const lineOfEntry = (entry) => (entry && Number.isInteger(entry.line) ? entry.line : null);
+
+    for (const raw of candidates) {
+      if (!raw) continue;
+      const entry = raw instanceof Map
+        ? (raw.has(op) ? raw.get(op) : raw.get('*'))
+        : (Array.isArray(raw) ? raw
+          : (Object.prototype.hasOwnProperty.call(raw, op) ? raw[op] : raw['*']));
+      const roles = rolesOfEntry(entry);
+      if (!roles) continue;
+      const line = lineOfEntry(entry);
+      const where = line !== null && def.authority && def.authority.source
+        ? `${def.authority.source.file}:${line}` : at;
+      return { covered: true, roles, at: where };
+    }
+    return { covered: false, roles: null, at };
+  }
+
+  /** Does any rule in the model speak about this operation on this entity? */
+  const rulesFor = (entity, op) =>
+    model.processes.filter((r) => r.trigger.op === op && r.trigger.entity === entity);
+
+  /**
+   * Does this rule carry authority *anywhere* — resolved scope (grammar v2: arm, rule, file), or
+   * the version-1 file list?
+   *
+   * grammar.md §16.2 defines an uncovered pair as one where "no rule that matches it has any
+   * effective authority and the entity declares none", so a matching rule with no `## Authorized
+   * by` at all does NOT cover the operation. That is the stricter and the correct reading: a rule
+   * that says what must happen but never says who may do it has not authorized anybody.
+   */
+  function ruleHasAuthority(node, depth = 0) {
+    if (!node || typeof node !== 'object' || depth > 4) return false;
+    if (Array.isArray(node.authorizedBy) && node.authorizedBy.length) return true;
+    if (node.authority) {
+      if (Array.isArray(node.authority.roles) && node.authority.roles.length) return true;
+      if (Array.isArray(node.authority) && node.authority.length) return true;
+    }
+    if (node.fileAuthority && Array.isArray(node.fileAuthority.roles)
+        && node.fileAuthority.roles.length) return true;
+    for (const key of ['arms', 'branches', 'consequents']) {
+      const list = node[key];
+      if (Array.isArray(list) && list.some((n) => ruleHasAuthority(n, depth + 1))) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The coverage verdict for one (entity, operation) pair, whatever the setting says. Exposed on
+   * the kernel so a UI can show a company where its own authorization boundary runs.
+   */
+  function coverage(entity, op) {
+    const byRule = rulesFor(entity, op).filter(ruleHasAuthority);
+    if (byRule.length) {
+      return {
+        covered: true, by: 'rule', roles: null,
+        at: `${byRule[0].source.file}:${byRule[0].source.line}`,
+      };
+    }
+    const def = model.entities.get(entity);
+    const ent = entityAuthority(def, op);
+    if (ent.covered) return { covered: true, by: 'entity', roles: ent.roles, at: ent.at };
+    return {
+      covered: false, by: null, roles: null,
+      at: def && def.source ? def.source.file : `operating-model/information/${entity}.md`,
+    };
+  }
+
+  /**
+   * The refusal FD-7 asks for: loud, and naming the file to edit. Returns null when the
+   * operation is permitted.
+   */
+  function checkAuthorization(entity, op, actorRoles, grounded = null) {
+    // Only the INTENT is checked, never the consequents a rule produces. A consequent is
+    // authorized by the rule that demanded it — the company's own sentence said this must happen
+    // — so requiring it to be separately covered would make every rule with a consequence
+    // unusable and teach authors to write ceremony instead of meaning (Principle 11).
+    //
+    // `Read` is deliberately out of scope in v1.0. `Read` rules authorize but do not filter
+    // visibility (COMPROMISES #4f), and the read index hands documents to the UI without going
+    // through perform() at all — so refusing an ungoverned read here would be theatre while the
+    // document stayed readable. Named rather than quietly skipped.
+    if (op === 'read') return null;
+
+    const c = coverage(entity, op);
+    if (!c.covered) {
+      if (!settings.authorization.strict) return null;
+      return {
+        reason: `nothing in this company's operating model says who may ${op} ${article(entity)} `
+          + `${entity}, so nobody may.\n`
+          + `  This workspace runs with strict authorization (neodonkey.json: `
+          + `authorization.strict = true), which means an operation no rule and no entity default `
+          + `governs is refused rather than allowed.\n`
+          + `  To permit it, say so in the company's own words — add a rule under "## Rules", or `
+          + `an entity default:\n`
+          + `    ${c.at}\n`
+          + `    ## Authorized by\n`
+          + `    - ${op}: <role>\n`,
+        at: c.at, entity, operation: op, code: 'not-authorized-by-anything',
+      };
+    }
+    // FD-9's stated consequence, said out loud at the one place a person will read it: a peer with
+    // no recorded roles can perform nothing that any rule governs. Refused HERE rather than left
+    // to the rule engine, because the rule engine can only say "someone with no role may not do
+    // this" — true, unhelpful, and it names the rule when the thing to fix is the peer record.
+    if (grounded && grounded.recorded === false) {
+      return {
+        reason: `${op} ${article(entity)} ${entity} is governed by this company's operating model, `
+          + `and ${PATHS.peer(me.email)} records no roles for ${me.email} — so they may not do it.\n`
+          + `  ${c.at} decides who may`
+          + `${c.by === 'entity' && c.roles && c.roles.length ? `: ${c.roles.join(' or ')}` : ''}.\n`
+          + '  This is not a lost permission; it is a permission that was never granted. Until FD-9 '
+          + 'a caller could simply assert a role and be believed, so a workspace could run for '
+          + 'months without anyone recording who holds what.\n'
+          + grantHint(me.email),
+        at: c.at, entity, operation: op, code: 'roles-not-recorded', principal: me.email,
+      };
+    }
+    // A rule-level authority is enforced by the rule engine. An entity-level default has no rule
+    // to enforce it, so the kernel does — otherwise declaring one would weaken the model.
+    if (c.by === 'entity' && c.roles && c.roles.length
+        && !c.roles.some((r) => actorRoles.includes(r))) {
+      return {
+        reason: `${actorRoles.length ? `someone whose role is ${actorRoles.map((r) => `"${r}"`).join(' / ')}` : 'someone with no role'} `
+          + `may not ${op} ${article(entity)} ${entity}.\n`
+          + `  ${c.at} says:\n    ## Authorized by\n    - ${op}: ${c.roles.join(' or ')}`
+          // FD-9: say where the acting roles came from, so the reader knows whether to fix the
+          // call (a narrower claim than they hold) or the grant (a role nobody recorded).
+          + (grounded
+            ? `\n  ${me.email} acts with ${actorRoles.length ? actorRoles.map((r) => `"${r}"`).join(', ') : 'no role'}`
+              + `${grounded.claimed === null ? ' (every role recorded for them)' : ' (their own claim, narrowed to what the repository records)'}`
+              + `, from ${PATHS.peer(me.email)}.`
+            : ''),
+        at: c.at, entity, operation: op, code: 'not-authorized-by-entity-default',
+      };
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Four-eyes — the signature side. Manifesto line 114, COMPROMISES #4d.
+  // -------------------------------------------------------------------------------------------
+
+  /** The public key this repository holds for a principal, or null. Truth, not assertion. */
+  function peerKey(principal) {
+    const bytes = files.get(PATHS.peer(principal));
+    if (!bytes) return null;
+    try { return unjson(bytes).publicKeySsh ?? null; } catch { return null; }
+  }
+
+  /** The roles this repository records for a principal, if it records any. */
+  function peerRoles(principal) {
+    const bytes = files.get(PATHS.peer(principal));
+    if (!bytes) return null;
+    try {
+      const rec = unjson(bytes);
+      return Array.isArray(rec.roles) ? rec.roles : null;
+    } catch { return null; }
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // FD-9 — a caller's roles are the INTERSECTION of what it claims and what the repo records.
+  //
+  // Before this, `intent.actorRoles` was a claim the caller made about itself: the kernel
+  // enforced it faithfully and then trusted it completely, so `perform({actorRoles:
+  // ['managing-director']})` from any script, any MCP client, any browser tab *was* a managing
+  // director (COMPROMISES #21). Signature requirements were already repo-backed; ordinary rule
+  // authorisation was not. Two mechanisms, two trust levels, one of them decorative.
+  //
+  // Roles now come from the acting peer's signed peer record. The caller may NARROW — a managing
+  // director deliberately acting as a warehouse clerk is legitimate, and it is how a careful
+  // operator tests a rule — and may never WIDEN. Intersection, never replacement: replacement
+  // would let an empty claim mean "all my roles", which silently widens authority in exactly the
+  // dangerous direction.
+  //
+  // Three things this file does NOT do, deliberately:
+  //   - it does not fall back to the claim when the record is silent. FD-9: "a peer with no
+  //     recorded roles can perform nothing that any rule governs, which is the correct default
+  //     and will look like a regression to anyone who was relying on the claim." Fail closed.
+  //   - it does not change what any rule MEANS. FD-7 needed a repo-recorded setting because
+  //     flipping default-allow changes the meaning of a 2027 folder. FD-9 changes only whose word
+  //     counts for *identity*, which is a property of the runtime and not of the folder — so it
+  //     is unconditional, and gating it on a file the caller's own workspace controls would be
+  //     absurd for a fix whose whole point is that self-assertion is worthless.
+  //   - it does not reach into `runtime/polism/`. `evaluate()` keeps its version-1 contract and
+  //     is simply handed a grounded role set instead of a claimed one.
+  // -------------------------------------------------------------------------------------------
+
+  /** How a company grants a role. Quoted by every refusal a missing grant caused. */
+  const grantHint = (principal) =>
+    `  Roles are granted by recording them on the peer, in a signed commit:\n`
+    + `      kernel.grantRoles(${JSON.stringify(principal)}, ['<role>'])\n`
+    + `      kernel.addPeer({ name, email: ${JSON.stringify(principal)}, publicKeySsh, `
+    + `roles: ['<role>'] })\n`
+    + `  The grant lands in ${PATHS.peer(principal)} and is visible in \`git log\`. A peer whose\n`
+    + `  record carries no roles holds no authority at all — that is FD-9, and it fails closed on\n`
+    + `  purpose, because a role a caller merely claims is not a control.`;
+
+  /**
+   * What the repository records about one principal's authority.
+   *
+   * Four distinguishable states, because each needs its own refusal and because collapsing any
+   * two of them is how "fail closed" quietly becomes "fail open":
+   *   - `present: false`      no peer record at all — nobody has introduced this peer
+   *   - `unreadable: true`    a record we cannot parse — never read as "therefore unrestricted"
+   *   - `recorded: false`     a record with no `roles` array — holds nothing (FD-9's default)
+   *   - `recorded: true`      a record that grants exactly these roles
+   */
+  function recordedRoles(principal) {
+    const bytes = files.get(PATHS.peer(principal));
+    if (!bytes) return { roles: [], recorded: false, present: false, unreadable: false };
+    let rec;
+    try { rec = unjson(bytes); } catch {
+      return { roles: [], recorded: false, present: true, unreadable: true };
+    }
+    if (!Array.isArray(rec.roles)) {
+      return { roles: [], recorded: false, present: true, unreadable: false };
+    }
+    const roles = [...new Set(rec.roles.filter((r) => typeof r === 'string' && r !== ''))];
+    return { roles, recorded: true, present: true, unreadable: false };
+  }
+
+  /**
+   * FD-9 in one function. Returns either `{ roles, held, claimed, recorded }` or `{ refusal }`.
+   *
+   * **Refuse, do not intersect silently, when the claim exceeds the record.** Four reasons, and
+   * the fourth is a precedent in this same file:
+   *
+   *  1. A silent intersection makes two very different situations indistinguishable. A typo
+   *     (`accountants` for `accountant`) and an attacker probing for `managing-director` both come
+   *     back as "the rule refused you" — a diagnostic that names the *rule* when the actual cause
+   *     is the *claim*. Principle 6 says a refusal names the real cause, in the caller's terms.
+   *  2. It is unstable under model change. A superset claim succeeds while no rule happens to need
+   *     the excess role and starts failing, with an unrelated message, the day one does. The blast
+   *     radius of the bug becomes a function of when you look.
+   *  3. It costs nothing legitimate. Every legitimate narrowing is *by definition* a subset, so
+   *     refusing a non-subset removes no capability whatsoever — it only removes the ability to be
+   *     sloppy about which authority you are exercising.
+   *  4. `readSettings()` below already decided this exact question the same way: a caller whose
+   *     `strictAuthorization` contradicts the record is refused rather than quietly overruled,
+   *     because "a silent disagreement about a security setting is the exact class of defect
+   *     #4c-bis was." A claim of authority is a security setting.
+   *
+   * And the meaning of the claim itself, which is where "intersection, never replacement" bites:
+   *   - `actorRoles` OMITTED = no claim at all ⇒ act with everything the repo records for me.
+   *     Safe by construction: it can never exceed the record.
+   *   - `actorRoles: []` = a deliberate claim to no role ⇒ act with no role. This is narrowing to
+   *     nothing, which is the *safe* direction, and it is why the empty array must not be read as
+   *     "all of them" (FD-9 names that specific mistake).
+   */
+  function groundRoles(intent) {
+    const held = recordedRoles(me.email);
+    if (!held.present) {
+      return { refusal: {
+        reason: `this workspace holds no peer record for ${me.email} (${PATHS.peer(me.email)}), so `
+          + 'it records no authority for them and they may perform nothing that any rule governs.\n'
+          + '  A peer nobody has introduced is not a peer with unlimited rights; it is a peer with '
+          + 'none. Reading the company is unaffected.\n'
+          + grantHint(me.email),
+        code: 'peer-record-missing', principal: me.email, at: PATHS.peer(me.email),
+      } };
+    }
+    if (held.unreadable) {
+      return { refusal: {
+        reason: `${PATHS.peer(me.email)} is not readable JSON, so this workspace cannot say which `
+          + `roles ${me.email} holds.\n`
+          + '  An unreadable peer record means NO authority, never full authority. Repair the file '
+          + '(it is in the git history: `git log -p -- '
+          + `${PATHS.peer(me.email)}\`) rather than working around it.`,
+        code: 'peer-record-unreadable', principal: me.email, at: PATHS.peer(me.email),
+      } };
+    }
+
+    const claimed = Array.isArray(intent.actorRoles)
+      ? [...new Set(intent.actorRoles.map((r) => String(r)).filter((r) => r !== ''))]
+      : null;
+
+    if (claimed === null) {
+      // No claim made. Act as this peer, with exactly what the repository grants it.
+      return { roles: [...held.roles], held: held.roles, claimed: null, recorded: held.recorded };
+    }
+
+    const excess = claimed.filter((r) => !held.roles.includes(r));
+    if (excess.length) {
+      return { refusal: {
+        reason: `${me.email} asked to act as `
+          + `${excess.map((r) => `"${r}"`).join(' / ')}, and `
+          + `${PATHS.peer(me.email)} does not record that role for them.\n`
+          + `  Recorded: ${held.roles.length ? held.roles.map((r) => `"${r}"`).join(', ') : 'no roles at all'}. `
+          + `Claimed: ${claimed.map((r) => `"${r}"`).join(', ')}.\n`
+          + '  A caller may narrow its authority (claim a subset, which is how you test a rule as '
+          + 'somebody else) but never widen it. The claim is refused rather than quietly reduced, '
+          + 'because a caller asking for authority it does not hold is either a bug or an attack, '
+          + 'and both deserve to be visible.\n'
+          + grantHint(me.email),
+        code: 'roles-not-held', principal: me.email, at: PATHS.peer(me.email),
+        claimed, recorded: held.roles, notHeld: excess,
+      } };
+    }
+    return { roles: claimed, held: held.roles, claimed, recorded: held.recorded };
+  }
