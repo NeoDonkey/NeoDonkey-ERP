@@ -7,9 +7,9 @@ Generated and verified by `test/gate-score.test.js`. Do not edit by hand.
 
 ## Summary
 
-- **Green (Met):** 7 / 10
+- **Green (Met):** 8 / 10
 - **Partial:** 1 / 10
-- **Red (Unmet):** 2 / 10
+- **Red (Unmet):** 1 / 10
 
 ---
 
