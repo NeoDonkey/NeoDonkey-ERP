@@ -8,6 +8,7 @@ const DEMO_INVOICE = {
   serviceDate: '2027-11-01',
   subject: 'Software-Entwicklung November 2027',
   paymentDays: '14',
+  buyerReference: 'BEST-2027-4711',
   customer: {
     name: 'Musterfirma GmbH',
     street: 'Beispielstraße 42',
