@@ -100,7 +100,7 @@ const CONDITIONS = [
     status: 'red',
     evidence: [],
     missing: 'External security audit and red team penetration test report.',
-    description: 'External security audit and red team attempt to forge commits, bypass rules, unbalance the ledger, or breach group encryption.',
+    description: 'External security audit and red team attempt to forge commits, bypass rules, unbalance ledger, or breach group encryption.',
   },
   {
     number: 10,
