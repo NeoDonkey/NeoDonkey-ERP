@@ -74,7 +74,12 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  * @param {Object<string,string>} [spec.priorClosing] account-number -> closing balance token
  *   from the prior year's Schlussbilanz; omit at founding
  * @param {Array<object>} [spec.existingEntries] journal entries already in the repository —
- *   used to refuse a second onboarding
+ *   used to refuse a second onboarding. WARNING: this guard is only as strong as what the
+ *   caller passes. The kernel/UI wiring that commits the opening entry MUST pass every
+ *   `journal-entry` the workspace holds (for this chart, at minimum); omitting it turns the
+ *   GoBD Rz. 86–89 unchangeability guarantee into decoration — the same failure class as a
+ *   validator that runs against an empty world. Callers that cannot enumerate the journal must
+ *   not call this function.
  * @returns {{ entry:object, postings:object[], totals:{ debits:string, credits:string },
  *   openingBalanceNets:Object<string,string> }}
  * @throws {ValidationError} for malformed input

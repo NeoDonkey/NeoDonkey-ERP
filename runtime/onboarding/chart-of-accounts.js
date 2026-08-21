@@ -187,20 +187,25 @@ function validateAccount(row, where, problems) {
   }
   if (problems.length > before) return null;
 
-  return Object.freeze({
+  // Optional fields are omitted when the row does not declare them, not blanked: the model
+  // declares `vat-rate-percent` as a *number* (operating-model/information/ledger-account.md),
+  // and an empty string is not a number. The runtime's reads treat absent and empty the same
+  // (execute.js `isEmpty`), so omitting loses nothing and keeps the emitted shape honest.
+  const account = {
     'account-number': number,
     name: row.name.trim(),
     'account-type': row['account-type'],
     'normal-balance': row['normal-balance'],
     'statement-section': row['statement-section'],
     'vat-role': row['vat-role'],
-    'vat-kennzahl': row['vat-kennzahl'] ?? '',
-    'vat-rate-percent': row['vat-rate-percent'] ?? '',
     'reconciliation-account-for': row['reconciliation-account-for'],
     manual: row.manual,
     'opening-balance-role': role ?? 'none',
     source: row.source ?? 'published-standard',
-  });
+  };
+  if (row['vat-kennzahl'] !== undefined) account['vat-kennzahl'] = row['vat-kennzahl'];
+  if (row['vat-rate-percent'] !== undefined) account['vat-rate-percent'] = row['vat-rate-percent'];
+  return Object.freeze(account);
 }
 
 /** Control totals are declared in the template and must agree with the rows, exactly. */
@@ -259,23 +264,29 @@ export function instantiateLedgerAccounts(template, { chart, openedOn } = {}) {
   }
   const section = { 'balance-sheet': 'balance-sheet', 'income-statement': 'profit-and-loss' };
   const reconciliation = { none: 'none', bank: 'bank', customer: 'receivables', supplier: 'payables' };
-  return template.accounts.map((a) => Object.freeze({
-    id: `${chart}-${a['account-number']}`,
-    'account-number': a['account-number'],
-    name: a.name,
-    chart,
-    'account-type': a['account-type'],
-    'normal-balance': a['normal-balance'],
-    'statement-section': section[a['statement-section']],
-    'vat-role': a['vat-role'],
-    'vat-kennzahl': a['vat-kennzahl'],
-    'vat-rate-percent': a['vat-rate-percent'],
-    'reconciliation-account-for': reconciliation[a['reconciliation-account-for']],
-    'blocked-for-manual-posting': a.manual,
-    'account-source': a.source,
-    'opened-on': openedOn,
-    status: 'active',
-  }));
+  return template.accounts.map((a) => {
+    // `vat-kennzahl` is declared text — '' reads as "no line" (the existing seed tables do the
+    // same). `vat-rate-percent` is declared a *number*, so it is copied only when the row carries
+    // one; an absent optional field is what the model's readers treat as empty.
+    const doc = {
+      id: `${chart}-${a['account-number']}`,
+      'account-number': a['account-number'],
+      name: a.name,
+      chart,
+      'account-type': a['account-type'],
+      'normal-balance': a['normal-balance'],
+      'statement-section': section[a['statement-section']],
+      'vat-role': a['vat-role'],
+      'vat-kennzahl': a['vat-kennzahl'] ?? '',
+      'reconciliation-account-for': reconciliation[a['reconciliation-account-for']],
+      'blocked-for-manual-posting': a.manual,
+      'account-source': a.source,
+      'opened-on': openedOn,
+      status: 'active',
+    };
+    if (a['vat-rate-percent'] !== undefined) doc['vat-rate-percent'] = a['vat-rate-percent'];
+    return Object.freeze(doc);
+  });
 }
 
 /** Find one account row by number, or undefined. */
