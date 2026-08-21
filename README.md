@@ -11,14 +11,16 @@ Write down your company as you would describe it. That is your ERP.
 [DATEV Mittelstand Faktura is being discontinued on 31 December 2026](https://www.datev.de/web/de/mittelstand/faktura).
 Thousands of German SMEs are looking for an alternative that preserves their DATEV workflow.
 
-NeoDonkey already ships **DATEV EXTF v700 serialization** — your bookings flow straight to
-your tax advisor's system, no migration, no middleware, no lock-in.
+NeoDonkey ships the **DATEV EXTF v700 header format** — the consultant/client block and the 116
+Buchungsstapel column names, Windows-1252 encoded, per DATEV's own interface guide. Serialization
+of the booking lines themselves is being built now (#82); until it lands, bookings do not yet
+flow to your tax advisor's system.
 
 | | NeoDonkey | Odoo | SAP S/4HANA | Lexware |
 |---|---|---|---|---|
 | **Open source** | ✅ EUPL-1.2 | ✅ LGPL | ❌ Proprietary | ❌ Proprietary |
 | **Self-hosted** | ✅ Zero dependencies | ⚠️ Python/PostgreSQL | ❌ Cloud or on-prem | ❌ Cloud only |
-| **DATEV EXTF v700** | ✅ Built-in | ⚠️ Community module | ❌ Third-party | ⚠️ Export only |
+| **DATEV EXTF v700** | 🚧 Header shipped, bookings in build (#82) | ⚠️ Community module | ❌ Third-party | ⚠️ Export only |
 | **No vendor lock-in** | ✅ Git-native | ⚠️ Custom ORM | ❌ Custom formats | ❌ Cloud data |
 | **Works offline** | ✅ Browser + Git | ❌ Server required | ❌ Server required | ❌ Cloud required |
 
