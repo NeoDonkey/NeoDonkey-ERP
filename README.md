@@ -12,7 +12,7 @@ Write down your company as you would describe it. That is your ERP.
 Thousands of German SMEs are looking for an alternative that preserves their DATEV workflow.
 
 NeoDonkey ships the **DATEV EXTF v700** serializer — the full header, booking lines, and
-validation, with 9 passing tests. Ready for your tax advisor.
+validation, tested by `test/datev-*.test.js`. Ready for your tax advisor.
 
 | | NeoDonkey | Odoo | SAP S/4HANA | Lexware |
 |---|---|---|---|---|
