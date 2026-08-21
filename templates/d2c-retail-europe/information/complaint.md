@@ -36,6 +36,9 @@ to paste an email thread.
 ## Identified by
 id
 
+## Displayed by
+description
+
 ## Created on demand
 no
 

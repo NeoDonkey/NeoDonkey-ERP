@@ -1610,6 +1610,7 @@ export function parseOperatingModel(files) {
         fields: new Map(), predicates: new Map(), invariants: new Map(),
         identifiedBy: null, displayedBy: null, createdOnDemand: false,
         authority: null, period: null, datedIn: [],
+        displayedBy: null,
         source: { file: path, line: 1 },
       };
       const fieldsSec = only('fields');

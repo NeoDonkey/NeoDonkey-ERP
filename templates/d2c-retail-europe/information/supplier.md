@@ -35,6 +35,9 @@ invented at the meeting.
 ## Identified by
 name
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

@@ -38,6 +38,9 @@ without the underlying facts agreeing, and then no one can tell which of the two
 ## Identified by
 chart and account-number
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

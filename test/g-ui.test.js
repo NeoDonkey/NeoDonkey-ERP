@@ -67,6 +67,9 @@ Where a lorry may back up, and when.
 - name: text required
 - gate-number: number required
 - active: boolean
+
+## Displayed by
+name
 `],
   ['operating-model/information/pallet-audit.md', `# Pallet Audit
 
@@ -276,7 +279,7 @@ test('a document’s human label is derived: name field, then business key, then
   const audit = model.entities.get('pallet-audit');
 
   assert.deepEqual(displayLabel({ id: 'DOCK-1', name: 'Gate West' }, slot),
-    { text: 'Gate West', id: 'DOCK-1', from: 'name' });
+    { text: 'Gate West', id: 'DOCK-1', from: 'displayedBy' });
   // pallet-audit has no name field, but it has `## Identified by reference-code`
   assert.deepEqual(displayLabel({ id: 'PA-1', 'reference-code': 'PA-1' }, audit),
     { text: 'PA-1', id: 'PA-1', from: 'key' });
@@ -924,13 +927,15 @@ test('unsigned builds show the unverified/unsigned state in "This runtime" scree
 
 /**
  * The honest counterpart to the test above. The UI *does* know a few conventional FIELD names —
- * four for working out a document's human label, and `currency` for rendering `money` (which is
- * grammar §10.7's own documented workaround for money having no currency). That is a small
- * amount of hidden semantics, and it is pinned here so it cannot quietly grow into the
- * per-entity knowledge Principle 7 forbids.
+ * only `currency` for rendering `money` (which is grammar §10.7's own documented workaround for
+ * money having no currency). The display candidates 'name', 'title', 'label', and 'description'
+ * have been completely removed from the runtime and moved to the operating model via the
+ * '## Displayed by' grammar section (Close compromise #13). That is a small amount of hidden
+ * semantics, and it is pinned here so it cannot quietly grow into the per-entity knowledge
+ * Principle 7 forbids.
  */
-test('the UI knows exactly five conventional field names, and no more', async () => {
-  const CONVENTIONAL = ['name', 'title', 'label', 'description', 'currency'];
+test('the UI knows exactly one conventional field name, and no more', async () => {
+  const CONVENTIONAL = ['currency'];
   const src = stripComments(await readFile(repoPath('runtime/ui/fields.js'), 'utf8'));
 
   for (const field of CONVENTIONAL) {
