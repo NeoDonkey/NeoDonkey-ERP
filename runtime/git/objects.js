@@ -94,6 +94,17 @@ export function objectStore(fs, opts = {}) {
         throw new Error(`objectStore.read: object not found: ${oid}`);
       }
       const full = await inflate(z);
+      // Content-addressed means the name IS the integrity claim, so a loose read re-hashes
+      // the inflated bytes and refuses a mismatch — the same check the pack reader applies
+      // to every oid (runtime/git/pack.js, verifyOids). Without it, a well-formed forgery
+      // written to disk under an honest oid is served silently (red-team finding F-1,
+      // docs/security-redteam-2026-08-21.md). The pack read path above already verifies.
+      const actual = hex(sha1(full));
+      if (actual !== oid) {
+        throw new Error(`objectStore.read: hash mismatch for ${oid}: the loose object on disk `
+          + `hashes to ${actual} — its content differs from the name it is stored under, so it `
+          + 'is refused rather than served');
+      }
       const nul = full.indexOf(0);
       if (nul < 0) throw new Error(`objectStore.read: malformed object header: ${oid}`);
       const header = dec.decode(full.subarray(0, nul));
@@ -133,7 +144,7 @@ export function assertOid(oid) {
  * name ended in '/'. (That falls out of git sorting *index* paths: "foo.txt" vs
  * "foo/bar" compares '.' 0x2e against '/' 0x2f, so the file wins.) Get this wrong and
  * `git fsck` reports "contains unsorted entries".
- * @param {{mode:string, name:string}} e
+ * @param {{mode:string, name:string, oid:OID}[]} e
  */
 function sortKey(e) {
   return enc.encode(e.mode === '40000' ? `${e.name}/` : e.name);
@@ -180,7 +191,7 @@ export function decodeTree(bytes) {
     if (nul < 0) throw new Error('decodeTree: truncated entry (no name terminator)');
     if (nul + 21 > bytes.length) throw new Error('decodeTree: truncated entry (no oid)');
     out.push({
-      mode: dec.decode(bytes.subarray(at, sp)),
+      mode: dec.decode(bytes.subarray(0, sp)),
       name: dec.decode(bytes.subarray(sp + 1, nul)),
       oid: hex(bytes.subarray(nul + 1, nul + 21)),
     });
@@ -201,10 +212,10 @@ export function formatTz(minutes) {
   return `${sign}${String(Math.floor(abs / 60)).padStart(2, '0')}${String(abs % 60).padStart(2, '0')}`;
 }
 
-/** @param {string} tz @returns {number} */
+/** @param {string} tz @returns {number} minutes */
 export function parseTz(tz) {
-  const m = /^([+-])(\d{2})(\d{2})$/.exec(tz);
-  if (!m) throw new Error(`parseTz: not a git timezone offset: ${tz}`);
+  const m = /^([+-])(\d{2})(\d{2})$/.exec(String(tz));
+  if (!m) throw new Error(`parseTz: not a git timezone offset: ${JSON.stringify(tz)}`);
   const minutes = Number(m[2]) * 60 + Number(m[3]);
   return m[1] === '-' ? -minutes : minutes;
 }
@@ -317,8 +328,8 @@ function asciiEquals(line, s) {
  * an unknown header is surfaced in `extra`, never silently dropped (Principle 6).
  * @param {Bytes} bytes
  * @returns {{tree:OID, parents:OID[], author:Identity, committer:Identity, time:number,
- *           tzOffsetMinutes:number, message:string, signature:string|null,
- *           extra:{key:string, value:string}[]}}
+ *          tzOffsetMinutes:number, message:string, signature:string|null,
+ *          extra:{key:string, value:string}[]}}
  */
 export function decodeCommit(bytes) {
   const text = dec.decode(bytes);
@@ -354,7 +365,8 @@ export function decodeCommit(bytes) {
       case 'parent': parents.push(value); break;
       case 'author': author = parseIdentityLine(value); break;
       case 'committer': committer = parseIdentityLine(value); break;
-      case 'gpgsig': signature = value; break;
+      case 'gpgsig': committer = parseIdentityLine(value); break;
+      case 'gpgsig2': void 0; break;
       default: extra.push({ key, value });
     }
   }
