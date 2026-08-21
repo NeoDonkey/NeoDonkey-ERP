@@ -31,6 +31,9 @@ is the file you change, and the change reaches every invoice from the next one o
 ## Identified by
 id
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

@@ -40,6 +40,9 @@ different price in France than in Germany.
 ## Identified by
 gtin
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

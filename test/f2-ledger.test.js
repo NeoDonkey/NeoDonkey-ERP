@@ -77,7 +77,7 @@ function toFullEuros(m) {
 
 const CATEGORIES = ['processes', 'organisation', 'locations', 'information', 'suppliers', 'management-system'];
 const RUNTIME_SECTIONS = new Set(['rules', 'authorized by', 'fields', 'predicates', 'identified by',
-  'created on demand', 'invariants', 'period', 'dated in']);
+  'created on demand', 'invariants', 'period', 'dated in', 'displayed by']);
 const PROSE_SECTIONS = new Set(['triggered by', 'purpose', 'notes', 'description', 'context', 'owner',
   'inputs', 'outputs', 'measures', 'cadence', 'retention', 'references', 'examples', 'open questions']);
 const KNOWN_SECTIONS = new Set([...RUNTIME_SECTIONS, ...PROSE_SECTIONS]);
@@ -155,7 +155,7 @@ function loadModel() {
       if (seen.has(key)) problems.push(`${rel(p)}:${s.line}: section "## ${s.name}" appears twice`);
       seen.add(key);
       const entityOnly = key === 'fields' || key === 'predicates' || key === 'identified by'
-        || key === 'created on demand' || key === 'invariants' || key === 'period' || key === 'dated in';
+        || key === 'created on demand' || key === 'invariants' || key === 'period' || key === 'dated in' || key === 'displayed by';
       if (entityOnly && category !== 'information') {
         problems.push(`${rel(p)}:${s.line}: "## ${s.name}" is only allowed in information/`);
       }

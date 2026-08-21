@@ -208,12 +208,11 @@ export function isEmpty(value) {
  * The human handle for one document — used wherever a `reference to <entity>` must be shown
  * as something other than an opaque id. Derived, in this order:
  *   1. the entity's `## Displayed by` fields, joined;
- *   2. a declared `text` field named name/title/label/description;
- *   3. the entity's `## Identified by` fields, joined;
- *   4. the id.
+ *   2. the entity's `## Identified by` fields, joined;
+ *   3. the id.
  * @param {object|null} doc
  * @param {EntityDef|null} entityDef
- * @returns {{ text: string, id: string|null, from: 'displayedBy'|'name'|'key'|'id'|'missing' }}
+ * @returns {{ text: string, id: string|null, from: 'displayedBy'|'key'|'id'|'missing' }}
  */
 export function displayLabel(doc, entityDef) {
   if (!doc) return { text: '', id: null, from: 'missing' };
@@ -224,12 +223,6 @@ export function displayLabel(doc, entityDef) {
     if (Array.isArray(disp) && disp.length > 0) {
       const parts = disp.map((f) => (isEmpty(doc[f]) ? '?' : String(doc[f])));
       if (parts.some((p) => p !== '?')) return { text: parts.join(' · '), id, from: 'displayedBy' };
-    }
-    for (const candidate of ['name', 'title', 'label', 'description']) {
-      const def = fields.get(candidate);
-      if (def && def.type === 'text' && !isEmpty(doc[candidate])) {
-        return { text: String(doc[candidate]), id, from: 'name' };
-      }
     }
     const key = entityDef.identifiedBy;
     if (Array.isArray(key) && key.length > 0) {
@@ -318,10 +311,9 @@ export function columnsFor(entityDef, { max = 7 } = {}) {
     taken.add(def.name);
     out.push(def);
   };
-  for (const f of entityDef.displayedBy ?? []) push(entityDef.fields.get(f));
-  for (const candidate of ['name', 'title', 'label']) {
+  for (const candidate of (entityDef.displayedBy ?? [])) {
     const def = entityDef.fields.get(candidate);
-    if (def?.type === 'text') { push(def); break; }
+    if (def) push(def);
   }
   for (const f of entityDef.identifiedBy ?? []) push(entityDef.fields.get(f));
   for (const def of declared) if (def.required) push(def);

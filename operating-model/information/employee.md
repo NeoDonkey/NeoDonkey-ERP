@@ -32,6 +32,9 @@ anywhere in this folder, and the demo must stay that way.
 ## Identified by
 signing-key-fingerprint
 
+## Displayed by
+display-name
+
 ## Created on demand
 no
 

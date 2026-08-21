@@ -33,6 +33,9 @@ signed history.
 ## Identified by
 name
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

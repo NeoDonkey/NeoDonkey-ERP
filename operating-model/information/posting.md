@@ -48,6 +48,9 @@ that is the whole point of making the rate a modelled fact instead of a configur
 ## Identified by
 journal-entry and position
 
+## Displayed by
+description
+
 ## Created on demand
 no
 

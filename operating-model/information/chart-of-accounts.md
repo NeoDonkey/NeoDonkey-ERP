@@ -51,6 +51,9 @@ and *Trade receivables* in SKR04, and a ledger that cannot tell those apart is n
 ## Identified by
 name
 
+## Displayed by
+name
+
 ## Created on demand
 no
 

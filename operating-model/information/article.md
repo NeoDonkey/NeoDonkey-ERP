@@ -35,6 +35,9 @@ another in France, and another on a pallet to a grocery chain, and all three are
 ## Identified by
 gtin
 
+## Displayed by
+name
+
 ## Created on demand
 no
 
