@@ -94,16 +94,18 @@ export function objectStore(fs, opts = {}) {
         throw new Error(`objectStore.read: object not found: ${oid}`);
       }
       const full = await inflate(z);
-      // Content-addressed means the name IS the integrity claim, so a loose read re-hashes
-      // the inflated bytes and refuses a mismatch — the same check the pack reader applies
-      // to every oid (runtime/git/pack.js, verifyOids). Without it, a well-formed forgery
-      // written to disk under an honest oid is served silently (red-team finding F-1,
-      // docs/security-redteam-2026-08-21.md). The pack read path above already verifies.
+      // Content-addressed means the name is a claim, and a claim gets checked. Until the red
+      // team of 2026-08-21 this re-hash was missing (finding F-1): bytes placed at the path
+      // for `oid` — a hostile sync peer, a disk error, anyone with write access to the folder —
+      // were inflated and served as if they were the object. The header and length checks below
+      // only prove the bytes are self-consistent; they say nothing about whether these are the
+      // bytes the name promises. One SHA-1 per loose read is the price of the promise.
       const actual = hex(sha1(full));
       if (actual !== oid) {
-        throw new Error(`objectStore.read: hash mismatch for ${oid}: the loose object on disk `
-          + `hashes to ${actual} — its content differs from the name it is stored under, so it `
-          + 'is refused rather than served');
+        throw new Error(
+          `objectStore.read: hash mismatch for ${oid}: the bytes at its path hash to ${actual}. `
+          + 'The loose object does not contain what its name claims — the store is corrupted or '
+          + 'somebody wrote to it who should not have. Do not serve these bytes.');
       }
       const nul = full.indexOf(0);
       if (nul < 0) throw new Error(`objectStore.read: malformed object header: ${oid}`);
