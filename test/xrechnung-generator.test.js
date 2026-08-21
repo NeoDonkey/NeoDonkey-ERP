@@ -109,6 +109,61 @@ test('generateXRechnungUblXml produces valid UBL 2.1 XML and round-trips with pa
   assert.equal(parsed.totals.payableAmount.toString(), '178.50 EUR');
 });
 
+test('generateXRechnungUblXml dynamically computes multi-group tax breakdown when subtotals array is omitted', () => {
+  const invoice = {
+    invoiceNumber: 'INV-2026-MULTI-DYNAMIC',
+    issueDate: '2026-08-21',
+    invoiceTypeCode: '380',
+    currency: 'EUR',
+    seller: {
+      name: 'MultiRate GmbH',
+      vatId: 'DE123456789',
+      address: { streetName: 'Main St 10', cityName: 'Hamburg', postalZone: '20095', countryCode: 'DE' }
+    },
+    buyer: {
+      name: 'Client AG',
+      address: { streetName: 'Side St 5', cityName: 'Köln', postalZone: '50667', countryCode: 'DE' }
+    },
+    lines: [
+      {
+        lineId: '1',
+        quantity: 1n,
+        lineNetAmount: money('100.00 EUR'),
+        itemName: 'Standard Rated Goods',
+        itemPrice: money('100.00 EUR'),
+        vatCategory: 'S',
+        vatPercent: '19'
+      },
+      {
+        lineId: '2',
+        quantity: 1n,
+        lineNetAmount: money('200.00 EUR'),
+        itemName: 'Reduced Rate Books',
+        itemPrice: money('200.00 EUR'),
+        vatCategory: 'AA',
+        vatPercent: '7'
+      }
+    ],
+    totals: {
+      lineExtensionAmount: money('300.00 EUR'),
+      taxExclusiveAmount: money('300.00 EUR'),
+      taxAmount: money('33.00 EUR'),
+      taxInclusiveAmount: money('333.00 EUR'),
+      payableAmount: money('333.00 EUR')
+    }
+  };
+
+  const xml = generateXRechnungUblXml(invoice);
+
+  // Assert exact computed TaxAmount values for 19% (19.00) and 7% (14.00)
+  assert.ok(xml.includes('<cbc:TaxAmount currencyID="EUR">19.00</cbc:TaxAmount>'), 'Must compute 19.00 EUR tax amount for S category');
+  assert.ok(xml.includes('<cbc:TaxAmount currencyID="EUR">14.00</cbc:TaxAmount>'), 'Must compute 14.00 EUR tax amount for AA category');
+
+  const parsed = parseXRechnungUblXml(xml);
+  assert.equal(parsed.totals.taxAmount.toString(), '33.00 EUR');
+  assert.equal(parsed.totals.payableAmount.toString(), '333.00 EUR');
+});
+
 test('generateXRechnungUblXml supports explicit taxSubtotals array for multi-rate invoices', () => {
   const invoice = {
     invoiceNumber: 'INV-2026-MULTI',

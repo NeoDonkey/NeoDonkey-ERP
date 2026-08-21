@@ -7,7 +7,7 @@
  * Zero dependencies. Exact string & BigInt Money formatting via runtime/money/money.js.
  */
 
-import { toMoney, sum } from '../money/money.js';
+import { toMoney, sum, percentage, equals, add } from '../money/money.js';
 
 export class ValidationError extends Error {
   /**
@@ -228,7 +228,7 @@ export function generateXRechnungUblXml(invoice) {
     if (!lineGroups.has(groupKey)) {
       lineGroups.set(groupKey, { vatCategory, vatPercent, netAmounts: [] });
     }
-    lineGroups.get(groupKey).netAmounts.push(line.lineNetAmount);
+    lineGroups.get(groupKey).netAmounts.push(toMoney(line.lineNetAmount));
 
     linesXmlParts.push(`  <cac:InvoiceLine>
     <cbc:ID>${escapeXml(lineId)}</cbc:ID>
@@ -290,11 +290,22 @@ export function generateXRechnungUblXml(invoice) {
   } else {
     // Generate TaxSubtotal items dynamically from line item VAT groupings
     const subtotalsParts = [];
+    let calculatedTotalTax = null;
+
     for (const group of lineGroups.values()) {
       const groupTaxableSum = sum(group.netAmounts, currency);
       const groupTaxableXml = formatMoneyXml(groupTaxableSum, currency, `taxSubtotal[${group.vatCategory}] taxableAmount`);
-      // For single group, taxAmountXml matches overall taxAmountXml
-      const groupTaxXml = lineGroups.size === 1 ? taxAmountXml : formatMoneyXml(group.taxAmount || '0.00 ' + currency, currency, `taxSubtotal[${group.vatCategory}] taxAmount`);
+
+      let groupTaxMoney;
+      if (lineGroups.size === 1) {
+        groupTaxMoney = toMoney(invoice.totals.taxAmount);
+      } else {
+        groupTaxMoney = percentage(groupTaxableSum, group.vatPercent, 'half-up');
+      }
+
+      calculatedTotalTax = calculatedTotalTax === null ? groupTaxMoney : add(calculatedTotalTax, groupTaxMoney);
+      const groupTaxXml = formatMoneyXml(groupTaxMoney, currency, `taxSubtotal[${group.vatCategory}] taxAmount`);
+
       subtotalsParts.push(`    <cac:TaxSubtotal>
       <cbc:TaxableAmount currencyID="${escapeXml(currency)}">${groupTaxableXml}</cbc:TaxableAmount>
       <cbc:TaxAmount currencyID="${escapeXml(currency)}">${groupTaxXml}</cbc:TaxAmount>
@@ -307,6 +318,17 @@ export function generateXRechnungUblXml(invoice) {
       </cac:TaxCategory>
     </cac:TaxSubtotal>`);
     }
+
+    if (calculatedTotalTax !== null && lineGroups.size > 1) {
+      const declaredTotalTax = toMoney(invoice.totals.taxAmount);
+      if (!equals(calculatedTotalTax, declaredTotalTax)) {
+        throw new ValidationError(
+          'mismatched-tax-totals',
+          `Sum of computed VAT subtotal tax amounts (${calculatedTotalTax.toString()}) does not match declared totals.taxAmount (${declaredTotalTax.toString()})`
+        );
+      }
+    }
+
     taxSubtotalsXml = subtotalsParts.join('\n');
   }
 
