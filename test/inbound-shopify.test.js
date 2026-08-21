@@ -4,15 +4,18 @@
 // docs/decisions/2026-08-19-inbound-dialect-shopify-order-mapping-and-idempotency.md:
 //
 //   Answer 2 — strict string → BigInt minor-unit parsing, every float-shaped thing refused loudly;
-//   Answer 3 — tax_lines → SKR03 (19 % → 8400/1776, 7 % → 8300/1771, OSS destination → 8336/1791);
+//   Answer 3 — the VAT treatment resolved from the operating model's vat-treatment DOCUMENTS
+//              (accounts are model data, never runtime constants), OSS destination treatment, and
+//              a loud refusal when the destination cannot be determined;
 //   Answer 4 — discount_applications allocated largest-remainder, line nets summing EXACTLY to the
 //              order net (including the case naive rounding leaves a cent short);
-//   Answer 5 — financial_status "paid" → payment through the 1370 clearing account; anything else
-//              → an OPOS open item on the customer subledger account (10000–69999);
+//   Answer 5 — financial_status "paid" → payment through the caller-supplied clearing account;
+//              anything else → an OPOS open item on a collision-checked customer subledger account;
 //   Answer 1 — ingestion through the REAL kernel (signed commits via kernel.perform), idempotent
-//              on (source-system, source-id): a replay returns the existing document and commits
-//              nothing, and the same foreign event in two fresh workspaces produces byte-identical
-//              commits.
+//              on (source-system, source-id): a replay returns the existing documents and commits
+//              nothing, a PARTIAL earlier run is completed, a contradictory stored document is a
+//              named refusal, and the same foreign event in two fresh workspaces produces
+//              byte-identical commits.
 //
 // Zero dependencies. `node --test test/inbound-shopify.test.js`.
 
@@ -29,10 +32,52 @@ import { scanSources } from './_source-guard.js';
 
 import {
   InboundError, SOURCE_SYSTEM,
-  parseShopifyMinor, moneyToken, normalizeRatePercent, taxClassFor,
+  parseShopifyMinor, moneyToken, normalizeRatePercent, selectTreatment, classifyOrder,
   normalizeOrder, allocateDiscount, orderToDocuments,
   documentIdFor, customerAccountFor, findBySource, ingestShopifyOrder,
 } from '../runtime/inbound/shopify.js';
+
+// =============================================================================================
+// Company policy for these tests, passed explicitly — the dialect has no defaults for any of it.
+// The account numbers here are TEST fixtures (the dialect reads them from vat-treatment
+// documents); 8400/1776, 8300/1771, 8336/1791 are the values the shipped SKR03 chart assigns.
+// =============================================================================================
+
+const OPTS = {
+  homeCountry: 'DE',
+  clearingAccount: '1370',
+  subledger: { base: '10000', size: 50000 },
+};
+
+/** vat-treatment documents as a company adopts them (shape per operating-model/information/
+ *  vat-treatment.md and test/f2-ledger.test.js). */
+const TREATMENT_DOCS = [
+  {
+    name: 'domestic-standard', 'applies-to': 'sale', 'vat-rate-percent': 19,
+    'rate-determined-by': 'origin-country', 'requires-oss-return': false, status: 'active',
+    'revenue-account-number': '8400', 'output-vat-account-number': '1776',
+  },
+  {
+    name: 'domestic-reduced', 'applies-to': 'sale', 'vat-rate-percent': 7,
+    'rate-determined-by': 'origin-country', 'requires-oss-return': false, status: 'active',
+    'revenue-account-number': '8300', 'output-vat-account-number': '1771',
+  },
+  {
+    name: 'oss-distance-sale', 'applies-to': 'sale', 'vat-rate-percent': 20,
+    'rate-determined-by': 'destination-country', 'requires-oss-return': true, status: 'active',
+    'revenue-account-number': '8336', 'output-vat-account-number': '1791',
+  },
+];
+
+/** The resolved inputs orderToDocuments needs: model-resolved classes + explicit policy. */
+function resolvedFor(order, over = {}) {
+  return {
+    classes: classifyOrder(order, TREATMENT_DOCS),
+    customerAccount: customerAccountFor(order, OPTS.subledger),
+    clearingAccount: OPTS.clearingAccount,
+    ...over,
+  };
+}
 
 // =============================================================================================
 // Fixtures — constructed field-for-field from the Shopify Admin API order schemas:
@@ -245,27 +290,60 @@ test('normalizeRatePercent: REST fractions and GraphQL percents to canonical per
 });
 
 // =============================================================================================
-// Answer 3 — the SKR03 tax mapping
+// Answer 3 — treatment resolution against the operating model's documents
 // =============================================================================================
 
-test('taxClassFor: domestic 19 %/7 %/0 %, OSS destination rates, and loud refusals', () => {
+test('selectTreatment: accounts come from the model documents, never from the dialect', () => {
   const de = { destinationCountry: 'DE', homeCountry: 'DE' };
-  assert.deepEqual(taxClassFor({ percent: '19', scaled: 190000n }, de), {
+  assert.deepEqual(selectTreatment(TREATMENT_DOCS, { percent: '19', scaled: 190000n }, de), {
     treatment: 'domestic-standard', revenueAccount: '8400', vatAccount: '1776', ratePercent: '19',
   });
-  assert.deepEqual(taxClassFor({ percent: '7', scaled: 70000n }, de), {
+  assert.deepEqual(selectTreatment(TREATMENT_DOCS, { percent: '7', scaled: 70000n }, de), {
     treatment: 'domestic-reduced', revenueAccount: '8300', vatAccount: '1771', ratePercent: '7',
   });
+  // OSS: the destination country's rate is carried verbatim; the accounts are the model's OSS pair.
   const fr = { destinationCountry: 'FR', homeCountry: 'DE' };
-  assert.deepEqual(taxClassFor({ percent: '20', scaled: 200000n }, fr), {
+  assert.deepEqual(selectTreatment(TREATMENT_DOCS, { percent: '20', scaled: 200000n }, fr), {
     treatment: 'oss-distance-sale', revenueAccount: '8336', vatAccount: '1791', ratePercent: '20',
   });
-  // A domestic rate with no mapping is an error, not a fallback account.
-  assert.throws(() => taxClassFor({ percent: '5', scaled: 50000n }, de),
-    (e) => e.code === 'unsupported-tax-rate');
-  // A non-EU destination is an export the dialect does not guess at.
+  // The accounts FOLLOW the model: re-point the treatment and the dialect follows, no code change.
+  const repointed = TREATMENT_DOCS.map((t) => (t.name === 'domestic-standard'
+    ? { ...t, 'revenue-account-number': '8410', 'output-vat-account-number': '1777' } : t));
+  assert.deepEqual(selectTreatment(repointed, { percent: '19', scaled: 190000n }, de), {
+    treatment: 'domestic-standard', revenueAccount: '8410', vatAccount: '1777', ratePercent: '19',
+  });
+});
+
+test('selectTreatment: every gap is a named refusal, never a fallback account', () => {
+  const de = { destinationCountry: 'DE', homeCountry: 'DE' };
+  // A rate the model has no treatment for.
+  assert.throws(() => selectTreatment(TREATMENT_DOCS, { percent: '5', scaled: 50000n }, de),
+    (e) => e.code === 'treatment-not-in-model');
+  // Two treatments covering the same situation: a model defect, loudly.
+  const ambiguous = [...TREATMENT_DOCS, {
+    ...TREATMENT_DOCS[0], name: 'domestic-standard-copy',
+  }];
+  assert.throws(() => selectTreatment(ambiguous, { percent: '19', scaled: 190000n }, de),
+    (e) => e.code === 'treatment-ambiguous');
+  // A treatment adopted without its account determination.
+  const undetermined = TREATMENT_DOCS.map((t) => (t.name === 'domestic-standard'
+    ? { ...t, 'revenue-account-number': '' } : t));
+  assert.throws(() => selectTreatment(undetermined, { percent: '19', scaled: 190000n }, de),
+    (e) => e.code === 'treatment-accounts-undetermined');
+  // A retired treatment does not cover anything.
+  const retired = TREATMENT_DOCS.map((t) => (t.name === 'domestic-standard'
+    ? { ...t, status: 'retired' } : t));
+  assert.throws(() => selectTreatment(retired, { percent: '19', scaled: 190000n }, de),
+    (e) => e.code === 'treatment-not-in-model');
+  // No destination: the jurisdiction cannot be determined — refuse, do not assume domestic.
   assert.throws(
-    () => taxClassFor({ percent: '0', scaled: 0n }, { destinationCountry: 'US', homeCountry: 'DE' }),
+    () => selectTreatment(TREATMENT_DOCS, { percent: '19', scaled: 190000n },
+      { destinationCountry: null, homeCountry: 'DE' }),
+    (e) => e.code === 'destination-unknown');
+  // A non-EU destination is an export the dialect does not guess at (stated v1 boundary).
+  assert.throws(
+    () => selectTreatment(TREATMENT_DOCS, { percent: '0', scaled: 0n },
+      { destinationCountry: 'US', homeCountry: 'DE' }),
     (e) => e.code === 'unsupported-destination');
 });
 
@@ -274,7 +352,7 @@ test('taxClassFor: domestic 19 %/7 %/0 %, OSS destination rates, and loud refusa
 // =============================================================================================
 
 test('allocateDiscount: the cent naive rounding loses', () => {
-  const order = normalizeOrder(REST_UNPAID_7);
+  const order = normalizeOrder(REST_UNPAID_7, OPTS);
   assert.equal(order.totalDiscountsMinor, 1000n);
   const parts = allocateDiscount(order.totalDiscountsMinor, order.lines, 'EUR');
   // Largest remainder: 3.34 / 3.33 / 3.33, summing to 10.00 EXACTLY.
@@ -285,7 +363,7 @@ test('allocateDiscount: the cent naive rounding loses', () => {
   const naive = 333n;
   assert.notEqual(naive * 3n, 1000n, 'naive equal-share rounding is a cent short — that is the bug');
   // The line nets therefore sum to the order net exactly.
-  const docs = orderToDocuments(order);
+  const docs = orderToDocuments(order, resolvedFor(order));
   const lineNets = docs.invoice.lines.map((l) => l.net);
   assert.deepEqual(lineNets, ['6.66 EUR', '6.67 EUR', '6.67 EUR']);
   assert.equal(docs.invoice['net-amount'], '20.00 EUR');
@@ -296,7 +374,7 @@ test('allocateDiscount: the cent naive rounding loses', () => {
 // =============================================================================================
 
 test('REST order → canonical sales invoice, journal entry and payment (exact BigInt assertions)', () => {
-  const order = normalizeOrder(REST_PAID_19);
+  const order = normalizeOrder(REST_PAID_19, OPTS);
   // Origin stamping, Answer 1.
   assert.equal(order.sourceSystem, SOURCE_SYSTEM);
   assert.equal(order.sourceId, '5628190318720');
@@ -308,7 +386,7 @@ test('REST order → canonical sales invoice, journal entry and payment (exact B
   assert.equal(order.netMinor, 4499n);
   assert.equal(order.totalMinor, 5354n);
 
-  const { invoice, journalEntry, payment } = orderToDocuments(order);
+  const { invoice, journalEntry, payment } = orderToDocuments(order, resolvedFor(order));
 
   // Invoice: line-level exactness after allocation.
   assert.equal(invoice['source-system'], 'shopify');
@@ -332,8 +410,8 @@ test('REST order → canonical sales invoice, journal entry and payment (exact B
   assert.equal(invoice['open-item'], undefined);
 
   // Journal entry: debit customer subledger gross; credit 8400 net and 1776 VAT. Balanced.
-  const account = customerAccountFor(order);
-  assert.ok(account >= '10000' && account < '60000', 'customer subledger within 10000–69999');
+  const account = customerAccountFor(order, OPTS.subledger);
+  assert.ok(account >= '10000' && account < '60000', 'customer subledger within the band');
   assert.equal(journalEntry['source-document-type'], 'sales-invoice');
   assert.equal(journalEntry['source-document-reference'], documentIdFor(order.sourceId));
   assert.deepEqual(journalEntry.postings.map((p) => [p.side, p.account, p.amount]), [
@@ -343,10 +421,11 @@ test('REST order → canonical sales invoice, journal entry and payment (exact B
   ]);
   assert.equal(journalEntry['debit-amount'], journalEntry['credit-amount']);
 
-  // Payment: debit the payment-service clearing account 1370, credit the customer. Clears it.
+  // Payment: debit the caller-supplied clearing account, credit the customer. Clears it.
   assert.ok(payment, 'a paid order records a payment');
   assert.equal(payment.amount, '53.54 EUR');
   assert.equal(payment.gateway, 'shopify_payments');
+  assert.equal(payment['clearing-account'], '1370');
   assert.equal(payment['clears-invoice'], documentIdFor(order.sourceId));
   assert.deepEqual(payment.postings.map((p) => [p.side, p.account, p.amount]), [
     ['debit', '1370', '53.54 EUR'],
@@ -355,10 +434,12 @@ test('REST order → canonical sales invoice, journal entry and payment (exact B
 });
 
 test('GraphQL order shape → identical accounting substance as REST', () => {
-  const rest = orderToDocuments(normalizeOrder(REST_PAID_19));
-  const gql = orderToDocuments(normalizeOrder(GQL_PAID_19));
+  const rest = orderToDocuments(normalizeOrder(REST_PAID_19, OPTS),
+    resolvedFor(normalizeOrder(REST_PAID_19, OPTS)));
+  const gqlOrder = normalizeOrder(GQL_PAID_19, OPTS);
+  const gql = orderToDocuments(gqlOrder, resolvedFor(gqlOrder));
   // The gid is reduced to the same external id; the reference is identical.
-  assert.equal(normalizeOrder(GQL_PAID_19).sourceId, '5628190318720');
+  assert.equal(gqlOrder.sourceId, '5628190318720');
   // Lines, totals, the VAT breakdown and every posting are byte-identical between the shapes.
   assert.deepEqual(gql.invoice.lines, rest.invoice.lines);
   assert.deepEqual(gql.invoice['vat-breakdown'], rest.invoice['vat-breakdown']);
@@ -371,13 +452,14 @@ test('GraphQL order shape → identical accounting substance as REST', () => {
 });
 
 test('unpaid order → OPOS open item on the customer subledger, no payment', () => {
-  const { invoice, journalEntry, payment } = orderToDocuments(normalizeOrder(REST_UNPAID_7));
+  const order = normalizeOrder(REST_UNPAID_7, OPTS);
+  const { invoice, journalEntry, payment } = orderToDocuments(order, resolvedFor(order));
   assert.equal(payment, null, 'an unpaid order records no payment');
-  const account = customerAccountFor(normalizeOrder(REST_UNPAID_7));
+  const account = customerAccountFor(order, OPTS.subledger);
   assert.deepEqual(invoice['open-item'], {
     account, amount: '21.40 EUR', status: 'open', since: '2026-08-20',
   });
-  // 7 % reduced rate: revenue 8300, VAT 1771.
+  // 7 % reduced rate: the model's domestic-reduced treatment says 8300 revenue and 1771 VAT.
   assert.deepEqual(journalEntry.postings.map((p) => [p.side, p.account, p.amount]), [
     ['debit', account, '21.40 EUR'],
     ['credit', '8300', '20.00 EUR'],
@@ -386,44 +468,60 @@ test('unpaid order → OPOS open item on the customer subledger, no payment', ()
   assert.equal(invoice['financial-status'], 'pending');
 });
 
-test('OSS destination sale → destination rate on OSS accounts 8336/1791, never 1776', () => {
-  const { invoice, journalEntry } = orderToDocuments(normalizeOrder(REST_PAID_OSS_FR));
+test('OSS destination sale → destination rate on the model\'s OSS accounts, never domestic VAT', () => {
+  const order = normalizeOrder(REST_PAID_OSS_FR, OPTS);
+  const { invoice, journalEntry } = orderToDocuments(order, resolvedFor(order));
   assert.deepEqual(invoice['vat-breakdown'], [{
     rate: '20', treatment: 'oss-distance-sale',
     base: '10.00 EUR', tax: '2.00 EUR',
     'revenue-account': '8336', 'vat-account': '1791',
   }]);
-  assert.deepEqual(journalEntry.postings.map((p) => p.account), ['23140', '8336', '1791']
-    .map((a, i) => (i === 0 ? customerAccountFor(normalizeOrder(REST_PAID_OSS_FR)) : a)));
+  const account = customerAccountFor(order, OPTS.subledger);
+  assert.deepEqual(journalEntry.postings.map((p) => p.account), [account, '8336', '1791']);
+});
+
+test('policy is never defaulted: home country, clearing account and subledger are required', () => {
+  // No home country: the origin side of every VAT decision is missing — refuse.
+  assert.throws(() => normalizeOrder(REST_PAID_19, { ...OPTS, homeCountry: undefined }),
+    (e) => e.code === 'home-country-required');
+  // No destination on the payload: the jurisdiction cannot be determined — refuse.
+  assert.throws(
+    () => normalizeOrder({ ...REST_PAID_19, shipping_address: null }, OPTS),
+    (e) => e.code === 'destination-unknown');
+  // A paid order without a clearing account: the payment leg has nowhere to debit — refuse.
+  const order = normalizeOrder(REST_PAID_19, OPTS);
+  assert.throws(
+    () => orderToDocuments(order, resolvedFor(order, { clearingAccount: undefined })),
+    (e) => e.code === 'clearing-account-required');
 });
 
 test('internally inconsistent orders are refused, never repaired', () => {
   // tax_lines that do not sum to total_tax.
   assert.throws(
-    () => normalizeOrder({ ...REST_PAID_19, total_tax: '8.56' }),
+    () => normalizeOrder({ ...REST_PAID_19, total_tax: '8.56' }, OPTS),
     (e) => e.code === 'tax-mismatch');
   // discount_applications that disagree with total_discounts.
   assert.throws(
-    () => normalizeOrder({ ...REST_PAID_19, total_discounts: '4.99' }),
+    () => normalizeOrder({ ...REST_PAID_19, total_discounts: '4.99' }, OPTS),
     (e) => e.code === 'discount-mismatch');
   // line items that do not sum to subtotal_price (e.g. line-level discounts folded in).
   assert.throws(
-    () => normalizeOrder({ ...REST_PAID_19, subtotal_price: '49.98' }),
+    () => normalizeOrder({ ...REST_PAID_19, subtotal_price: '49.98' }, OPTS),
     (e) => e.code === 'subtotal-mismatch');
   // a total that is not subtotal − discounts + tax.
   assert.throws(
-    () => normalizeOrder({ ...REST_PAID_19, total_price: '53.55' }),
+    () => normalizeOrder({ ...REST_PAID_19, total_price: '53.55' }, OPTS),
     (e) => e.code === 'total-mismatch');
   // charged shipping is out of scope and loud about it.
   assert.throws(
     () => normalizeOrder({
       ...REST_PAID_19, shipping_lines: [{ title: 'DHL', price: '4.90' }],
-    }),
+    }, OPTS),
     (e) => e.code === 'shipping-unsupported');
 });
 
 // =============================================================================================
-// Answer 1 — ingestion through the real kernel, idempotent and byte-identical
+// Answer 1 — ingestion through the real kernel, idempotent, completing, byte-identical
 // =============================================================================================
 
 /** Injected, never read — determinism is a non-negotiable (CONTRACT #5). */
@@ -433,11 +531,12 @@ function fixedClock() {
 }
 
 /**
- * A focused operating model: the three entities the dialect writes, each governed by an entity
- * authority. Deliberately NOT the shipped model — an invoice there needs a sales order, a customer
- * and a VAT treatment to exist first, so a test written against it would fail for reasons that
- * have nothing to do with ingestion. The kernel path underneath is the real one: authorization,
- * rule evaluation, one signed commit per document, the read index.
+ * A focused operating model: the entities the dialect writes plus the vat-treatment entity the
+ * dialect READS its account determination from. Deliberately NOT the shipped model — an invoice
+ * there needs a sales order, a customer and a VAT treatment web to exist first, so a test written
+ * against it would fail for reasons that have nothing to do with ingestion. The kernel path
+ * underneath is the real one: authorization, rule evaluation, one signed commit per document,
+ * the read index.
  */
 const INBOUND_MODEL = () => new Map([
   ['operating-model/information/invoice.md',
@@ -451,10 +550,15 @@ const INBOUND_MODEL = () => new Map([
   ['operating-model/information/payment.md',
     '# Payment\n\nA payment clearing a receivable.\n\n## Fields\n- amount: money required\n'
     + '\n## Authorized by\n- create: accountant\n- read: accountant\n- update: accountant\n'],
+  ['operating-model/information/vat-treatment.md',
+    '# VAT treatment\n\nA tax situation, with its account determination filled in at adoption.\n\n## Fields\n'
+    + '- name: text required\n- revenue-account-number: text required\n'
+    + '\n## Authorized by\n- create: accountant\n- read: accountant\n- update: accountant\n'],
   ['operating-model/organisation/accountant.md', '# Accountant\n\nKeeps the books.\n'],
 ]);
 
-async function workspace({ jwk = null } = {}) {
+/** Open a workspace and adopt the treatments — exactly how a real company would: as commits. */
+async function workspace({ jwk = null, treatments = TREATMENT_DOCS } = {}) {
   const keyPair = jwk
     ? await importPrivateJwk(jwk)
     : await generateIdentity({ comment: 'sarah@neodonkey.eu' });
@@ -465,17 +569,24 @@ async function workspace({ jwk = null } = {}) {
     roles: ['accountant'],
   });
   assert.deepEqual(nd.modelErrors, [], 'the ingestion model must be executable');
+  for (const doc of treatments) {
+    await nd.perform({
+      op: 'create', entity: 'vat-treatment', id: doc.name, doc,
+      message: `Adopt VAT treatment ${doc.name}`,
+    });
+  }
   return { nd, keyPair };
 }
 
 test('ingestion commits through the real kernel: signed commits, indexed documents', async () => {
   const { nd } = await workspace();
-  assert.equal((await nd.history()).length, 1, 'genesis only');
+  const baseline = (await nd.history()).length; // genesis + treatment adoption commits
 
-  const first = await ingestShopifyOrder(nd, REST_PAID_19);
+  const first = await ingestShopifyOrder(nd, REST_PAID_19, OPTS);
   assert.equal(first.created, true);
+  assert.equal(first.completed, false);
   assert.equal(first.commits.length, 3, 'invoice + journal entry + payment, one commit each');
-  assert.equal((await nd.history()).length, 4);
+  assert.equal((await nd.history()).length, baseline + 3);
 
   // The stored document is the canonical one, carrying its origin on its face.
   const stored = nd.query.get('invoice', 'shopify-order-5628190318720');
@@ -486,21 +597,35 @@ test('ingestion commits through the real kernel: signed commits, indexed documen
   assert.equal(stored['gross-amount'], '53.54 EUR');
 
   // Every commit verifies — the ingestion path is the signed-commit path, not a side channel.
-  const report = await nd.verify(10);
+  const report = await nd.verify(baseline + 3);
   assert.ok(report.every((c) => c.signature === 'good' && c.problems.length === 0),
     `all commits must verify: ${JSON.stringify(report)}`);
 });
 
-test('idempotent re-ingest: existing document returned, ZERO new commits', async () => {
+test('the accounts an ingestion posts are the model\'s, proven by re-pointing the treatment', async () => {
+  // Adopt domestic-standard with DIFFERENT account numbers: the dialect must follow the model.
+  const repointed = TREATMENT_DOCS.map((t) => (t.name === 'domestic-standard'
+    ? { ...t, 'revenue-account-number': '8410', 'output-vat-account-number': '1777' } : t));
+  const { nd } = await workspace({ treatments: repointed });
+  const result = await ingestShopifyOrder(nd, REST_PAID_19, OPTS);
+  const accounts = result.journalEntry.postings.map((p) => p.account);
+  assert.ok(accounts.includes('8410') && accounts.includes('1777'),
+    `postings must use the model's accounts, got ${accounts.join(', ')}`);
+  assert.ok(!accounts.includes('8400') && !accounts.includes('1776'),
+    'no account number may come from the dialect itself');
+});
+
+test('idempotent re-ingest: existing documents returned, ZERO new commits', async () => {
   const { nd } = await workspace();
 
-  const first = await ingestShopifyOrder(nd, REST_PAID_19);
+  const first = await ingestShopifyOrder(nd, REST_PAID_19, OPTS);
   const commitsAfterFirst = (await nd.history()).length;
 
   // A replayed webhook: same payload, and the GraphQL shape of the same order.
   for (const replay of [REST_PAID_19, GQL_PAID_19]) {
-    const again = await ingestShopifyOrder(nd, replay);
+    const again = await ingestShopifyOrder(nd, replay, OPTS);
     assert.equal(again.created, false);
+    assert.equal(again.completed, false);
     assert.equal(again.commits.length, 0, 'a replay commits nothing');
     assert.deepEqual(again.document, first.document, 'the existing document is returned');
     assert.equal((await nd.history()).length, commitsAfterFirst,
@@ -519,10 +644,74 @@ test('idempotent re-ingest: existing document returned, ZERO new commits', async
     'shopify-order-5628190318720');
 
   // A different order ingests normally: the guard is the tuple, not the dialect.
-  const second = await ingestShopifyOrder(nd, REST_UNPAID_7);
+  const second = await ingestShopifyOrder(nd, REST_UNPAID_7, OPTS);
   assert.equal(second.created, true);
   assert.equal(second.commits.length, 2, 'invoice + journal entry; unpaid records no payment');
   assert.equal((await nd.history()).length, commitsAfterFirst + 2);
+});
+
+test('a PARTIAL earlier run is completed, not stuck behind the idempotency guard', async () => {
+  const { nd } = await workspace();
+
+  // Simulate the crash the reviewer named: the invoice committed, then the run died before the
+  // journal entry and the payment. Only the invoice exists under the source tuple.
+  const order = normalizeOrder(REST_PAID_19, OPTS);
+  const docs = orderToDocuments(order, resolvedFor(order));
+  await nd.perform({
+    op: 'create', entity: 'invoice', id: 'shopify-order-5628190318720', doc: docs.invoice,
+    message: 'Ingest Shopify #1001 (5628190318720) — sales invoice',
+  });
+  const beforeReplay = (await nd.history()).length;
+
+  const replay = await ingestShopifyOrder(nd, REST_PAID_19, OPTS);
+  assert.equal(replay.created, false, 'the invoice was already there');
+  assert.equal(replay.completed, true, 'the missing siblings were completed');
+  assert.equal(replay.commits.length, 2, 'journal entry + payment committed, nothing duplicated');
+  assert.equal((await nd.history()).length, beforeReplay + 2);
+  assert.ok(replay.journalEntry, 'the journal entry exists after completion');
+  assert.ok(replay.payment, 'the payment exists after completion');
+  // The completed documents use the account the committed invoice already chose.
+  assert.equal(replay.journalEntry.postings[0].account, docs.invoice['customer-account']);
+
+  // And from here on the order is simply recorded: the next replay commits nothing.
+  const settled = await ingestShopifyOrder(nd, REST_PAID_19, OPTS);
+  assert.equal(settled.created, false);
+  assert.equal(settled.completed, false);
+  assert.equal(settled.commits.length, 0);
+  assert.equal((await nd.history()).length, beforeReplay + 2);
+});
+
+test('a stored document contradicting the payload is a named refusal, never an overwrite', async () => {
+  const { nd } = await workspace();
+  const order = normalizeOrder(REST_PAID_19, OPTS);
+  const docs = orderToDocuments(order, resolvedFor(order));
+  await nd.perform({
+    op: 'create', entity: 'invoice', id: 'shopify-order-5628190318720',
+    doc: { ...docs.invoice, 'gross-amount': '99.99 EUR' },
+    message: 'a different story about the same foreign id',
+  });
+  await assert.rejects(() => ingestShopifyOrder(nd, REST_PAID_19, OPTS),
+    (e) => e instanceof InboundError && e.code === 'source-conflict');
+});
+
+test('customer subledger collisions probe the next free account, deterministically', async () => {
+  const { nd } = await workspace();
+  // Two customers whose Shopify ids collide modulo the subledger band.
+  const colliding = {
+    ...REST_UNPAID_7,
+    id: 5628190450000,
+    name: '#1004',
+    customer: { id: 7311676961024 + 50000, email: 'otto@example.de', first_name: 'Otto', last_name: 'Rahn' },
+  };
+  const first = await ingestShopifyOrder(nd, REST_UNPAID_7, OPTS);
+  const second = await ingestShopifyOrder(nd, colliding, OPTS);
+  const a = first.document['customer-account'];
+  const b = second.document['customer-account'];
+  const expected = customerAccountFor(normalizeOrder(REST_UNPAID_7, OPTS), OPTS.subledger);
+  assert.equal(a, expected, 'the first customer takes the deterministic candidate');
+  assert.equal(b, (BigInt(expected) + 1n).toString(),
+    'the colliding customer probes to the next free account instead of sharing one');
+  assert.notEqual(a, b, 'two customers never share a subledger account silently');
 });
 
 test('same foreign event → byte-identical commits on two independent workspaces', async () => {
@@ -535,8 +724,8 @@ test('same foreign event → byte-identical commits on two independent workspace
   const a = await workspace({ jwk });
   const b = await workspace({ jwk });
 
-  const ra = await ingestShopifyOrder(a.nd, REST_PAID_19);
-  const rb = await ingestShopifyOrder(b.nd, REST_PAID_19);
+  const ra = await ingestShopifyOrder(a.nd, REST_PAID_19, OPTS);
+  const rb = await ingestShopifyOrder(b.nd, REST_PAID_19, OPTS);
 
   const oidsA = (await a.nd.history(10)).map((c) => c.oid);
   const oidsB = (await b.nd.history(10)).map((c) => c.oid);
