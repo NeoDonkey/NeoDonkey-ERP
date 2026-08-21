@@ -9,7 +9,8 @@ the architecture, the public API of the view-model layer, or any house rule.
   property: an 8-step 4px spacing scale, a 1.25 type scale on a 15px base, the dark color ramp,
   semantic status colors, three radii, two shadows, three motion durations, and the one accent,
   `#3DD8F5`, declared exactly once. `runtime/ui/style.css` was rewritten to spend those tokens and
-  declare no literal color, px spacing, or use of the CSS important keyword of its own. A test pins this.
+  declare no literal color or use of the CSS important keyword of its own. Tests pin the color,
+  font and important-keyword parts of this.
 - **Dark first.** The product runs in warehouses and back offices; dark is now the default
   `color-scheme` and light follows `prefers-color-scheme`. Every text color in both themes was
   checked for WCAG AA (4.5:1 for normal text) before shipping; the worst pair is tertiary ink at
@@ -30,8 +31,8 @@ the architecture, the public API of the view-model layer, or any house rule.
   to drop focus on every keystroke. Controls that opt in with `data-keep-focus` are refocused
   after render, with the caret restored. This was a functional defect, not a polish item.
 - **Motion discipline**: transitions run only on non-layout properties (color, background,
-  border), 120-200ms ease-out, all through duration tokens. `prefers-reduced-motion` zeroes the
-  three duration tokens in one place, so no component needs its own override and the CSS important keyword
+  border), 120-200ms ease-out, all through duration tokens. `prefers-reduced-motion` sets the
+  three duration tokens to 1ms in one place, so no component needs its own override and the CSS important keyword
   appears nowhere in the stylesheet. No scroll listeners were added; a test proves none exist.
 - **Density and depth**: sticky table headers inside a 72vh scroll region, sticky topbar with a
   real shadow, cards on a raised surface with a one-step elevation model, tabular numerals kept,
