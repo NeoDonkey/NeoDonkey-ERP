@@ -5,13 +5,31 @@
  * into a foreign system's format (DATEV EXTF, XRechnung); this one translates a foreign system's
  * format into canonical domain documents. The binding contract is the decision record
  * `docs/decisions/2026-08-19-inbound-dialect-shopify-order-mapping-and-idempotency.md`
- * (GitHub issues #118 and #119); its five Answers are implemented here, each named where it lands:
+ * (GitHub issues #118 and #119); its five Answers are implemented here, each named where it lands.
+ *
+ * This module is mechanism, not policy, and it contains no business vocabulary of its own:
+ *
+ *   - WHICH accounts a sale posts to is read from the workspace's `vat-treatment` documents
+ *     (`revenue-account-number` / `output-vat-account-number`), exactly the way
+ *     `operating-model/processes/invoice-posting.md` and `runtime/export/datev.js` read them. A
+ *     rate with no matching treatment in the operating model is a loud refusal, not a fallback
+ *     account — a new rate is an edit to the chart and the treatments, in a commit someone signs.
+ *   - WHICH country the company is in (`homeCountry`), WHICH account clears payment-service
+ *     settlements (`clearingAccount`), and WHICH band the customer subledger numbers come from
+ *     (`subledger`) are company policy and arrive as required ingest parameters. There is no
+ *     default country and no default account anywhere in this file.
+ *   - The only table the module carries is the list of EU member states: geographic reference
+ *     data, the same category as the ISO 4217 currency scales in `runtime/money/`.
  *
  *   Answer 1 — idempotency and origin. Every ingested order is stamped `source-system`,
  *     `source-id` and a human `reference` on the document itself, so the git history is the
  *     register and no parallel bookkeeping exists. `ingestShopifyOrder` looks the tuple up in the
  *     read index before committing: a previously seen `(source-system, source-id)` returns the
- *     existing document and commits NOTHING.
+ *     existing document and commits NOTHING. A PARTIALLY recorded order (an earlier run committed
+ *     the invoice and then failed) is completed: the missing siblings are committed, deterministically,
+ *     with the same ids and bytes the full run would have produced. A stored document that
+ *     disagrees with what the payload would produce is a named `source-conflict` refusal demanding
+ *     manual resolution — never a silent overwrite.
  *
  *   Answer 2 — zero-float parsing. Shopify expresses money as strings ("29.99") in REST and as
  *     MoneyV2 `{ amount, currencyCode }` objects in GraphQL. `parseShopifyMinor` turns those
@@ -20,12 +38,14 @@
  *     rounded guess. A `-0.00` from the foreign system is mapped to zero at this boundary,
  *     explicitly, as `runtime/money/README.md` requires of inbound dialects.
  *
- *   Answer 3 — tax mapping. `tax_lines` rates map onto the shipped SKR03 chart
- *     (`operating-model/information/_chart-skr03.md`): domestic 19 % → revenue 8400 / VAT 1776,
- *     domestic 7 % → 8300 / 1771, zero-rated → 8120, and an EU cross-border B2C destination (an
- *     OSS distance sale, `operating-model/information/vat-treatment.md`) → revenue 8336 with the
- *     destination rate carried verbatim and the VAT owed on the OSS liability account 1791 — never
- *     on 1776, or the Umsatzsteuervoranmeldung is wrong.
+ *   Answer 3 — tax mapping. The destination country decides: domestic sales resolve the active,
+ *     sale-side `vat-treatment` document whose `rate-determined-by` is `origin-country` and whose
+ *     `vat-rate-percent` matches the line's rate; an EU cross-border B2C destination resolves the
+ *     OSS treatment (`rate-determined-by: destination-country`, `requires-oss-return`), which
+ *     carries the destination rate verbatim and posts the VAT to the OSS liability account the
+ *     model names — never the domestic VAT account, or the Umsatzsteuervoranmeldung is wrong. An
+ *     order whose destination cannot be determined is refused (`destination-unknown`): the dialect
+ *     never guesses a tax jurisdiction.
  *
  *   Answer 4 — discount allocation. `discount_applications` (order-level, `across`) are allocated
  *     over the line items by `runtime/money/money.js`'s largest-remainder `allocate`, weighted by
@@ -33,19 +53,21 @@
  *     3.34/3.33/3.33, not the 3.33/3.33/3.33 that naive rounding leaves a cent short.
  *
  *   Answer 5 — payment and open items. `financial_status: "paid"` additionally records a payment
- *     document clearing the receivable through the payment-provider clearing account 1370
- *     (Verrechnungskonto Zahlungsdienstleister). Any other status leaves an OPOS open item on the
- *     customer subledger account (10000–69999, derived deterministically from the Shopify customer
- *     id), recorded on the invoice document and posted as the receivable leg.
+ *     document clearing the receivable through the caller-supplied payment-provider clearing
+ *     account. Any other status leaves an OPOS open item on the customer subledger account,
+ *     recorded on the invoice document and posted as the receivable leg. The subledger account is
+ *     derived deterministically from the Shopify customer id inside the caller-supplied band, and
+ *     collisions between two customers are resolved by probing the read index for the next free
+ *     number — deterministic given the same history, never guessed.
  *
  * Ingestion commits through the real kernel path — `kernel.perform` — so every order arrives as
  * signed, rule-checked commits, and with an injected clock the same foreign event produces a
  * byte-identical commit payload on any peer. This module contains no clock and no randomness.
  *
  * v1 boundaries, stated loudly rather than guessed at: orders with non-zero shipping charges,
- * line-level discount allocations already applied inside `subtotal_price`, and non-EU destinations
- * are refused with a named error. Extending the dialect is a decision-record change, not a silent
- * heuristic.
+ * line-level discount allocations already applied inside `subtotal_price`, unknown destinations,
+ * and non-EU (export) destinations are refused with a named error. Extending the dialect is a
+ * decision-record change, not a silent heuristic.
  *
  * Zero dependencies. No `node:*`. No `Date.now()`, no `Math.random()`.
  */
@@ -68,35 +90,12 @@ export const SOURCE_SYSTEM = 'shopify';
 /**
  * EU member states (ISO 3166-1 alpha-2) for the OSS destination check. Greece appears as both EL
  * (the code the EU itself uses for VAT) and GR (ISO), because a foreign payload may carry either.
+ * Reference data, like the ISO 4217 scale table in `runtime/money/` — not company policy.
  */
 export const EU_MEMBER_STATES = new Set([
   'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR', 'DE', 'EL', 'GR', 'HU', 'IE',
   'IT', 'LV', 'LT', 'LU', 'MT', 'NL', 'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE',
 ]);
-
-/**
- * The SKR03 account mapping, from `operating-model/information/_chart-skr03.md`. Keyed by the
- * domestic VAT rate in percent. An OSS distance sale does not key on rate — the destination
- * country's rate is carried verbatim and the accounts are the OSS pair.
- */
-export const SKR03_DOMESTIC = Object.freeze({
-  '19': Object.freeze({ treatment: 'domestic-standard', revenueAccount: '8400', vatAccount: '1776' }),
-  '7': Object.freeze({ treatment: 'domestic-reduced', revenueAccount: '8300', vatAccount: '1771' }),
-  '0': Object.freeze({ treatment: 'exempt', revenueAccount: '8120', vatAccount: null }),
-});
-
-/** OSS distance sale: `8336 Erlöse aus im anderen EU-Land steuerpflichtigen Lieferungen`, and the
- *  OSS VAT liability `1791` — deliberately not 1776 (see the chart file's own note). */
-export const SKR03_OSS = Object.freeze({
-  treatment: 'oss-distance-sale', revenueAccount: '8336', vatAccount: '1791',
-});
-
-/** `1370 Verrechnungskonto Zahlungsdienstleister` — where Shopify Payments settlements land. */
-export const CLEARING_ACCOUNT = '1370';
-
-/** Customer subledger band per the decision record: 10000–69999. */
-const SUBLEDGER_BASE = 10000n;
-const SUBLEDGER_SPAN = 50000n;
 
 const POW10 = [1n, 10n, 100n, 1000n, 10000n, 100000n, 1000000n];
 const pow10 = (n) => (n < POW10.length ? POW10[n] : 10n ** BigInt(n));
@@ -216,36 +215,96 @@ export function normalizeRatePercent(rate, kind, field = 'tax rate') {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Answer 3 — the tax & VAT mapping
+// Answer 3 — treatment resolution against the operating model, accounts from the model
 // ---------------------------------------------------------------------------------------------
 
+const truthy = (v) => v === true || v === 'yes';
+
 /**
- * Map one rate onto its SKR03 treatment. Cross-border EU B2C (destination country an EU member
- * other than `homeCountry`) is an OSS distance sale at the destination's own rate, whatever that
- * rate is. Domestic sales map by rate. Anything else is refused, loudly.
+ * Resolve the `vat-treatment` document that governs one line, from the treatments the operating
+ * model actually carries. The accounts come from that document's `revenue-account-number` and
+ * `output-vat-account-number` — this function names no account.
  *
- * @param {{ percent: string, scaled: bigint }} rate
+ * Selection, by fact rather than by constant:
+ *   - destination unknown          → `destination-unknown` (the caller normally catches this in
+ *                                    `normalizeOrder`, before any treatment is looked at);
+ *   - destination == home country  → the active sale-side treatment with
+ *                                    `rate-determined-by: origin-country` and this rate;
+ *   - destination in the EU        → the OSS treatment (`rate-determined-by: destination-country`,
+ *                                    `requires-oss-return`), whatever its rate — the rate is the
+ *                                    destination's and is carried verbatim;
+ *   - destination outside the EU   → `unsupported-destination` (export is a stated v1 boundary).
+ *
+ * Zero matches means the operating model has no treatment for a real tax situation — a loud
+ * `treatment-not-in-model`, because the fix is a model edit someone signs, not a fallback
+ * account. More than one match is a model defect: `treatment-ambiguous`. A treatment without a
+ * revenue account is `treatment-accounts-undetermined`.
+ *
+ * @param {object[]} treatments the workspace's `vat-treatment` documents
+ * @param {{ percent: string }} rate
  * @param {{ destinationCountry: string|null, homeCountry: string }} where
+ * @returns {{ treatment: string, revenueAccount: string, vatAccount: string|null,
+ *   ratePercent: string }}
  */
-export function taxClassFor(rate, where) {
+export function selectTreatment(treatments, rate, where) {
   const { destinationCountry, homeCountry } = where;
-  const dest = destinationCountry ? destinationCountry.toUpperCase() : null;
-  if (dest !== null && dest !== homeCountry.toUpperCase()) {
-    if (!EU_MEMBER_STATES.has(dest)) {
-      throw new InboundError('unsupported-destination',
-        `the order ships to ${dest}, which is neither the home country (${homeCountry}) nor an EU member state, so it is an export — and export treatment is a decision this dialect does not guess at. Record it in the decision record and extend the mapping.`);
+  if (destinationCountry === null || destinationCountry === undefined || destinationCountry === '') {
+    throw new InboundError('destination-unknown',
+      'the order carries no destination country, and a sale without a destination has no determinable VAT treatment. Refusing to guess a tax jurisdiction — capture the country at the boundary.');
+  }
+  const dest = destinationCountry.toUpperCase();
+  const home = String(homeCountry ?? '').toUpperCase();
+  const saleSide = treatments.filter((t) => t['applies-to'] !== 'purchase' && t.status !== 'retired');
+
+  const one = (matches, what) => {
+    if (matches.length === 0) {
+      throw new InboundError('treatment-not-in-model',
+        `no active sale-side vat-treatment in the operating model covers ${what}. That treatment is a fact about your business: add it to operating-model/information/vat-treatment.md and adopt it, in a commit someone signs — the dialect does not invent accounts.`);
     }
+    if (matches.length > 1) {
+      throw new InboundError('treatment-ambiguous',
+        `${matches.length} vat-treatment documents cover ${what} (${matches.map((t) => t.name ?? t.id).join(', ')}). The model must make the situation unambiguous — the dialect does not pick one.`);
+    }
+    const doc = matches[0];
+    const revenueAccount = doc['revenue-account-number'];
+    if (typeof revenueAccount !== 'string' || revenueAccount === '') {
+      throw new InboundError('treatment-accounts-undetermined',
+        `the vat-treatment '${doc.name ?? doc.id}' carries no revenue-account-number — account determination is "filled in at adoption" (operating-model/information/vat-treatment.md), and this one was not.`);
+    }
+    const vatAccount = doc['output-vat-account-number'];
     return {
-      treatment: SKR03_OSS.treatment, revenueAccount: SKR03_OSS.revenueAccount,
-      vatAccount: SKR03_OSS.vatAccount, ratePercent: rate.percent,
+      treatment: doc.name ?? doc.id,
+      revenueAccount,
+      vatAccount: typeof vatAccount === 'string' && vatAccount !== '' ? vatAccount : null,
+      ratePercent: rate.percent,
     };
+  };
+
+  if (dest === home) {
+    return one(
+      saleSide.filter((t) => t['rate-determined-by'] === 'origin-country'
+        && String(t['vat-rate-percent']) === rate.percent),
+      `a domestic sale at ${rate.percent} % VAT`,
+    );
   }
-  const domestic = SKR03_DOMESTIC[rate.percent];
-  if (!domestic) {
-    throw new InboundError('unsupported-tax-rate',
-      `a domestic VAT rate of ${rate.percent} % has no SKR03 mapping in this dialect (known: 19, 7, 0). A new rate is an edit to the chart of accounts and this table, in a commit someone signs — not a fallback account.`);
+  if (EU_MEMBER_STATES.has(dest)) {
+    return one(
+      saleSide.filter((t) => t['rate-determined-by'] === 'destination-country'
+        && truthy(t['requires-oss-return'])),
+      `an OSS distance sale to ${dest}`,
+    );
   }
-  return { ...domestic, ratePercent: rate.percent };
+  throw new InboundError('unsupported-destination',
+    `the order ships to ${dest}, which is neither the home country (${home}) nor an EU member state, so it is an export — and export treatment is a decision this dialect does not guess at. Record it in the decision record and extend the model and the mapping.`);
+}
+
+/**
+ * Resolve every line of a normalised order against the model's treatments.
+ * @returns {object[]} one treatment resolution per line, in line order
+ */
+export function classifyOrder(order, treatments) {
+  const where = { destinationCountry: order.destinationCountry, homeCountry: order.homeCountry };
+  return order.lines.map((line) => selectTreatment(treatments, line.rate, where));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -326,10 +385,17 @@ function lineRatePercent(li, graphql, field) {
  * of minor units the moment it crosses the boundary.
  *
  * @param {object} payload
- * @param {{ homeCountry?: string }} [options]
+ * @param {object} options
+ * @param {string} options.homeCountry REQUIRED. The company's own country (ISO 3166-1 alpha-2).
+ *   There is deliberately no default: the country that decides every VAT treatment on the order
+ *   is company policy, and company policy is never a silent constant.
  */
 export function normalizeOrder(payload, options = {}) {
-  const homeCountry = options.homeCountry ?? 'DE';
+  if (typeof options.homeCountry !== 'string' || options.homeCountry === '') {
+    fail('home-country-required',
+      'ingesting an order requires the company\'s homeCountry — the origin side of every VAT treatment decision. It is company policy: pass it explicitly (from your workspace settings), it is never defaulted.');
+  }
+  const homeCountry = options.homeCountry.toUpperCase();
   const { raw, graphql } = unwrap(payload);
 
   const sourceId = sourceIdOf(raw, graphql);
@@ -367,6 +433,10 @@ export function normalizeOrder(payload, options = {}) {
   const destinationCountry = shipping
     ? (shipping.country_code ?? shipping.countryCodeV2 ?? shipping.countryCode ?? null)
     : null;
+  if (destinationCountry === null || destinationCountry === undefined || destinationCountry === '') {
+    fail('destination-unknown',
+      'the order carries no shipping/billing country, and a sale without a destination has no determinable VAT treatment (domestic vs. OSS vs. export). Refusing to guess a tax jurisdiction.');
+  }
 
   const customer = raw.customer && typeof raw.customer === 'object' ? raw.customer : null;
   const customerId = customer
@@ -453,7 +523,7 @@ export function normalizeOrder(payload, options = {}) {
     currency,
     financialStatus,
     orderDate,
-    destinationCountry,
+    destinationCountry: String(destinationCountry).toUpperCase(),
     homeCountry,
     customer: customer ? {
       id: customerId,
@@ -498,7 +568,7 @@ export function allocateDiscount(discountMinor, lines, currency) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The canonical domain documents
+// The customer subledger account — derived, collision-checked, never invented
 // ---------------------------------------------------------------------------------------------
 
 /** The document id a given foreign order will always produce. Deterministic, never invented. */
@@ -507,16 +577,60 @@ export function documentIdFor(sourceId) {
 }
 
 /**
- * The customer subledger account (10000–59999 ⊂ 10000–69999) for an order: derived from the
- * Shopify customer id when there is one, else from the order id. Deterministic, so the same
- * customer always lands on the same account and a replayed order derives the same document.
+ * The FIRST candidate subledger account for an order's customer, derived from the Shopify customer
+ * id (else the order id) modulo the caller-supplied band. Deterministic: the same customer always
+ * starts from the same candidate, and a replayed order derives the same account.
+ *
+ * @param {object} order a normalised order
+ * @param {{ base: string, size: number|string }} subledger company policy: the first account number
+ *   of the customer band and how many numbers it holds (the decision record's example band is
+ *   10000–69999; the numbers are the caller's, not this module's).
+ * @returns {string} the candidate account number
  */
-export function customerAccountFor(order) {
+export function customerAccountFor(order, subledger) {
   const basis = order.customer && order.customer.id && /^\d+$/.test(order.customer.id)
     ? BigInt(order.customer.id)
     : BigInt(order.sourceId);
-  return (SUBLEDGER_BASE + (basis % SUBLEDGER_SPAN)).toString();
+  const base = BigInt(subledger.base);
+  const size = BigInt(subledger.size);
+  return (base + (basis % size)).toString();
 }
+
+/**
+ * Resolve the subledger account for this order's customer, collision-checked against the read
+ * index: if the deterministic candidate is already used by a DIFFERENT customer, probe the next
+ * number until a free one is found. Deterministic given the same history — two peers that saw the
+ * same commits probe to the same number. Exhausting the band is a loud refusal, not a wrap-around.
+ *
+ * @param {object} query the kernel's read index
+ * @param {object} order a normalised order
+ * @param {object} options with `subledger` as for `customerAccountFor`
+ * @param {string} [entity] the invoice entity the probe reads
+ * @returns {string} the account number this order's receivable posts to
+ */
+export function resolveCustomerAccount(query, order, options, entity = 'invoice') {
+  const base = BigInt(options.subledger.base);
+  const size = BigInt(options.subledger.size);
+  const customerKey = order.customer
+    ? (order.customer.email ?? `shopify-customer-${order.customer.id ?? order.sourceId}`)
+    : `shopify-customer-${order.sourceId}`;
+  let candidate = BigInt(customerAccountFor(order, options.subledger));
+  for (;;) {
+    const number = candidate.toString();
+    const holders = query.where(entity, (d) => d['customer-account'] === number);
+    const conflict = holders.find((d) => d.customer !== customerKey);
+    if (!conflict) return number;
+    candidate += 1n;
+    if (candidate >= base + size) {
+      throw new InboundError('subledger-exhausted',
+        `every account in the customer subledger band ${options.subledger.base}…${(base + size - 1n).toString()} is taken by another customer. Widen the band in the decision record — the dialect does not wrap around and share an account.`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// The canonical domain documents
+// ---------------------------------------------------------------------------------------------
 
 /**
  * Translate a normalised order into the canonical domain documents: the sales invoice, the
@@ -524,15 +638,29 @@ export function customerAccountFor(order) {
  * All amounts are FD-1 canonical tokens; the structure is deterministic in every field and order
  * of keys, so the same foreign event produces the same bytes on any peer.
  *
+ * Nothing economic is decided here: the treatments (and with them every account number) were
+ * resolved from the operating model by `classifyOrder`, and the company policy (customer account,
+ * clearing account) arrived as parameters.
+ *
+ * @param {object} order a normalised order
+ * @param {object} resolved
+ * @param {object[]} resolved.classes one `selectTreatment` result per line
+ * @param {string} resolved.customerAccount the collision-checked subledger account
+ * @param {string} [resolved.clearingAccount] the payment-provider clearing account — REQUIRED for
+ *   a paid order, unused otherwise
  * @returns {{ invoice: object, journalEntry: object, payment: object|null }}
  */
-export function orderToDocuments(order) {
+export function orderToDocuments(order, resolved) {
+  const { classes, customerAccount, clearingAccount } = resolved;
   const currency = order.currency;
   const token = (minor) => moneyToken(minor, currency);
-  const where = { destinationCountry: order.destinationCountry, homeCountry: order.homeCountry };
+  const paid = order.financialStatus === 'paid';
+  if (paid && (typeof clearingAccount !== 'string' || clearingAccount === '')) {
+    throw new InboundError('clearing-account-required',
+      'the order is paid, which means a payment document debiting the payment-service clearing account must be recorded — and which account that is, is company policy. Pass clearingAccount explicitly; it is never defaulted.');
+  }
 
-  // Classify every line, then allocate the discount across them in one exact pass.
-  const classes = order.lines.map((line) => taxClassFor(line.rate, where));
+  // Allocate the discount across the lines in one exact pass.
   const discounts = allocateDiscount(order.totalDiscountsMinor, order.lines, currency);
 
   const lines = order.lines.map((line, i) => ({
@@ -580,9 +708,7 @@ export function orderToDocuments(order) {
       'vat-account': g.vatAccount,
     }));
 
-  const customerAccount = customerAccountFor(order);
   const invoiceId = documentIdFor(order.sourceId);
-  const paid = order.financialStatus === 'paid';
 
   const invoice = {
     'source-system': order.sourceSystem,
@@ -668,7 +794,7 @@ export function orderToDocuments(order) {
   };
 
   // Answer 5, paid half: debit the payment-service clearing account, credit the customer — the
-  // receivable is gone and the money is with Shopify Payments until payout.
+  // receivable is gone and the money is with the payment provider until payout.
   const payment = paid ? {
     'source-system': order.sourceSystem,
     'source-id': order.sourceId,
@@ -677,10 +803,11 @@ export function orderToDocuments(order) {
     currency,
     amount: token(order.totalMinor),
     gateway: order.gateway ?? 'unknown',
+    'clearing-account': clearingAccount,
     'clears-invoice': invoiceId,
     postings: [
       {
-        position: 1, side: 'debit', account: CLEARING_ACCOUNT,
+        position: 1, side: 'debit', account: clearingAccount,
         amount: token(order.totalMinor), role: 'clearing',
       },
       {
@@ -694,7 +821,8 @@ export function orderToDocuments(order) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Answer 1 — ingestion through the real kernel, idempotent by (source-system, source-id)
+// Answer 1 — ingestion through the real kernel, idempotent by (source-system, source-id),
+//            and COMPLETING after a partial failure
 // ---------------------------------------------------------------------------------------------
 
 /**
@@ -715,51 +843,102 @@ export function findBySource(query, sourceSystem, sourceId, entity = 'invoice') 
   return found.length ? found[0] : null;
 }
 
+/** The fields that must agree between a replayed payload and the stored document, or the foreign
+ *  system is telling a different story about the same id — which a human must resolve. */
+function assertSameStory(stored, computed, what) {
+  for (const field of ['reference', 'currency', 'gross-amount']) {
+    if (stored[field] !== computed[field]) {
+      throw new InboundError('source-conflict',
+        `the stored ${what} for ${computed['source-system']}:${computed['source-id']} says ${field} is ${JSON.stringify(stored[field])} but the payload computes ${JSON.stringify(computed[field])}. The same foreign id is telling two different stories; resolve it manually — the dialect never overwrites a committed financial document.`);
+    }
+  }
+}
+
 /**
  * Ingest one Shopify order payload into a workspace, through the real kernel path: parse,
- * normalise, map, then `kernel.perform` — one signed, rule-checked commit per document.
+ * normalise, resolve treatments and accounts from the model, then `kernel.perform` — one signed,
+ * rule-checked commit per document.
  *
- * Idempotent (Answer 1): if `(source-system, source-id)` is already recorded, the existing
- * document is returned and NOTHING is committed — no duplicate document, no duplicate ledger
- * entry, no new fact.
+ * Idempotent (Answer 1), including after a crash: each of the three documents (invoice, journal
+ * entry, payment) is looked up by `(source-system, source-id)` independently. A fully recorded
+ * order returns the existing documents and commits NOTHING. A PARTIALLY recorded order — an
+ * earlier run committed the invoice and then failed — is COMPLETED: the missing siblings are
+ * committed with the same deterministic ids and bytes the uninterrupted run would have produced,
+ * so no order can end up half-ingested forever. A stored document that contradicts the payload is
+ * a `source-conflict` refusal, not an overwrite.
  *
  * @param {object} kernel an open workspace (`runtime/kernel.js`)
  * @param {object} payload REST order (or `{ order }`) or GraphQL `Order`
- * @param {object} [options]
- * @param {string} [options.homeCountry='DE']
+ * @param {object} options
+ * @param {string} options.homeCountry REQUIRED — the company's country; never defaulted.
+ * @param {string} [options.clearingAccount] REQUIRED for paid orders — the payment-service
+ *   clearing account; never defaulted.
+ * @param {{ base: string, size: number|string }} options.subledger REQUIRED — the customer
+ *   subledger band (first number, how many numbers); company policy.
  * @param {string} [options.entity='invoice'] invoice entity name in this company's model
  * @param {string} [options.journalEntity='journal-entry']
  * @param {string} [options.paymentEntity='payment']
+ * @param {string} [options.treatmentEntity='vat-treatment']
  * @param {string[]} [options.actorRoles] forwarded to `kernel.perform`
- * @returns {Promise<{ created: boolean, sourceSystem: string, sourceId: string, reference: string,
- *   document: object, commits: string[], journalEntry: object|null, payment: object|null }>}
+ * @returns {Promise<{ created: boolean, completed: boolean, sourceSystem: string, sourceId: string,
+ *   reference: string, document: object, commits: string[], journalEntry: object|null,
+ *   payment: object|null }>}
  */
 export async function ingestShopifyOrder(kernel, payload, options = {}) {
   const entity = options.entity ?? 'invoice';
   const journalEntity = options.journalEntity ?? 'journal-entry';
   const paymentEntity = options.paymentEntity ?? 'payment';
+  const treatmentEntity = options.treatmentEntity ?? 'vat-treatment';
   const actorRoles = Array.isArray(options.actorRoles) ? { actorRoles: options.actorRoles } : {};
+  if (!options.subledger || typeof options.subledger.base !== 'string'
+      || options.subledger.size === undefined) {
+    throw new InboundError('subledger-required',
+      'ingesting an order requires the customer subledger band (subledger: { base, size }). Which numbers your customers get is company policy — pass it explicitly, it is never defaulted.');
+  }
 
-  const order = normalizeOrder(payload, options);
+  const order = normalizeOrder(payload, options); // requires homeCountry, refuses unknown destination
 
-  const existing = findBySource(kernel.query, order.sourceSystem, order.sourceId, entity);
-  if (existing) {
+  // Everything economic is resolved BEFORE the first commit, so a payload we cannot map never
+  // leaves a half-ingested order behind: a run can only be interrupted by an actual failure.
+  const treatments = kernel.query.all(treatmentEntity);
+  const classes = classifyOrder(order, treatments);
+  const clearingAccount = typeof options.clearingAccount === 'string' && options.clearingAccount !== ''
+    ? options.clearingAccount
+    : undefined;
+  const docs = orderToDocuments(order, { classes, customerAccount: '0', clearingAccount });
+
+  // Existence per document, by source tuple — the register is the documents themselves.
+  const stored = {
+    invoice: findBySource(kernel.query, order.sourceSystem, order.sourceId, entity),
+    journalEntry: findBySource(kernel.query, order.sourceSystem, order.sourceId, journalEntity),
+    payment: findBySource(kernel.query, order.sourceSystem, order.sourceId, paymentEntity),
+  };
+  if (stored.invoice) assertSameStory(stored.invoice, docs.invoice, 'invoice');
+
+  const fullyRecorded = stored.invoice && stored.journalEntry && (!docs.payment || stored.payment);
+  if (fullyRecorded) {
     return {
       created: false,
+      completed: false,
       sourceSystem: order.sourceSystem,
       sourceId: order.sourceId,
       reference: order.reference,
-      document: existing,
+      document: stored.invoice,
       commits: [],
-      journalEntry: findBySource(kernel.query, order.sourceSystem, order.sourceId, journalEntity),
-      payment: findBySource(kernel.query, order.sourceSystem, order.sourceId, paymentEntity),
+      journalEntry: stored.journalEntry,
+      payment: stored.payment,
     };
   }
 
-  const { invoice, journalEntry, payment } = orderToDocuments(order);
+  // Fresh ingest or completion of a partial one. The customer account is resolved only now,
+  // against the current index — on a pure replay of a fully recorded order it is never consulted.
+  const customerAccount = stored.invoice
+    ? stored.invoice['customer-account'] // completion: the committed invoice already chose it
+    : resolveCustomerAccount(kernel.query, order, options, entity);
+  const final = orderToDocuments(order, { classes, customerAccount, clearingAccount });
+
   const invoiceId = documentIdFor(order.sourceId);
   const commits = [];
-
   const write = async (ent, id, doc, what) => {
     const result = await kernel.perform({
       op: 'create', entity: ent, id, doc, ...actorRoles,
@@ -774,20 +953,19 @@ export async function ingestShopifyOrder(kernel, payload, options = {}) {
     return result;
   };
 
-  await write(entity, invoiceId, invoice, 'sales invoice');
-  await write(journalEntity, `${invoiceId}-booking`, journalEntry, 'journal entry');
-  if (payment) {
-    await write(paymentEntity, `${invoiceId}-payment`, payment, 'payment');
-  }
+  if (!stored.invoice) await write(entity, invoiceId, final.invoice, 'sales invoice');
+  if (!stored.journalEntry) await write(journalEntity, `${invoiceId}-booking`, final.journalEntry, 'journal entry');
+  if (final.payment && !stored.payment) await write(paymentEntity, `${invoiceId}-payment`, final.payment, 'payment');
 
   return {
-    created: true,
+    created: !stored.invoice,
+    completed: Boolean(stored.invoice) && commits.length > 0,
     sourceSystem: order.sourceSystem,
     sourceId: order.sourceId,
     reference: order.reference,
     document: kernel.query.get(entity, invoiceId),
     commits,
     journalEntry: kernel.query.get(journalEntity, `${invoiceId}-booking`),
-    payment: payment ? kernel.query.get(paymentEntity, `${invoiceId}-payment`) : null,
+    payment: final.payment ? kernel.query.get(paymentEntity, `${invoiceId}-payment`) : null,
   };
 }
