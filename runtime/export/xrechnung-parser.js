@@ -37,6 +37,13 @@ function extractTagValue(xmlFragment, tagName) {
   let text = match[1].trim();
   if (text.startsWith('<![CDATA[') && text.endsWith(']]>')) {
     text = text.substring(9, text.length - 3).trim();
+  } else {
+    text = text
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
   }
   return text;
 }
