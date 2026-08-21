@@ -240,7 +240,6 @@ test('instantiateLedgerAccounts produces ledger-account documents as the model d
     'statement-section': 'balance-sheet',
     'vat-role': 'none',
     'vat-kennzahl': '',
-    'vat-rate-percent': '',
     'reconciliation-account-for': 'bank',
     'blocked-for-manual-posting': true,
     'account-source': 'published-standard',
@@ -253,6 +252,26 @@ test('instantiateLedgerAccounts produces ledger-account documents as the model d
   // The record's "customer"/"supplier" map to the model's "receivables"/"payables".
   assert.equal(docs.find((d) => d['account-number'] === '1400')['reconciliation-account-for'], 'receivables');
   assert.equal(docs.find((d) => d['account-number'] === '1600')['reconciliation-account-for'], 'payables');
+});
+
+test('the emitted shape matches the declared field types: vat-rate-percent is a number or absent', () => {
+  // information/ledger-account.md declares `vat-rate-percent: number` — an empty string is not a
+  // number, so a row without a rate emits NO field, and a row with one emits a JSON number.
+  const docs = instantiateLedgerAccounts(SKR03, { chart: 'skr03', openedOn: '2026-01-01' });
+  const bank = docs.find((d) => d['account-number'] === '1200');
+  assert.ok(!('vat-rate-percent' in bank), 'no rate on the row -> no field on the document');
+  const inputTax = docs.find((d) => d['account-number'] === '1576');
+  assert.equal(typeof inputTax['vat-rate-percent'], 'number');
+  assert.equal(inputTax['vat-rate-percent'], 19);
+  assert.equal(inputTax['vat-kennzahl'], '66');
+  // Every emitted document: if the field is there at all, it is a number.
+  for (const d of docs) {
+    if ('vat-rate-percent' in d) assert.equal(typeof d['vat-rate-percent'], 'number', d.id);
+  }
+  // And the parsed template rows follow the same rule.
+  for (const a of [...SKR03.accounts, ...SKR04.accounts]) {
+    if ('vat-rate-percent' in a) assert.equal(typeof a['vat-rate-percent'], 'number');
+  }
 });
 
 test('instantiation is deterministic and refuses an uninjected date', () => {
