@@ -10,10 +10,12 @@
 - **Checked In-Flight Claims and Decision Records**:
   Checked open PRs and `docs/decisions/` directory to prevent topic collisions.
 - **Created Decision Record**:
-  Authored `docs/decisions/2026-08-21-peppol-bis-billing-3-0-e-invoicing-profile-and-schematron-validation.md` citing primary sources (OpenPeppol BIS Billing 3.0 v3.0.16, EN 16931-1:2017 §6.1, ISO 6523 ICD code lists) detailing profile identifiers (`CustomizationID`, `ProfileID`), Electronic Address Scheme (`EAS`) endpoint identifiers (`BT-34` & `BT-49`), and Peppol Schematron business rules (`PEPPOL-EN16931-R001` through `R008`).
+  Authored `docs/decisions/2026-08-21-peppol-bis-billing-3-0-e-invoicing-profile-and-schematron-validation.md` citing primary sources (OpenPeppol BIS Billing 3.0 v3.0.16, EN 16931-1:2017 § 6.1, ISO 6523 ICD code lists) detailing profile identifiers (`CustomizationID`, `ProfileID`), Electronic Address Scheme (`EAS`) endpoint identifiers (`BT-34` & `BT-49`), and Peppol Schematron business rules (`PEPPOL-EN16931-R001` through `R020`, including `R010`/`R020` endpoint presence and `R008` empty element rejection).
 - **Defined Implementable Issue Specifications**:
   1. `feat(peppol): serialize Peppol BIS Billing 3.0 UBL 2.1 invoice documents with EAS endpoint identifiers` (`area:runtime`, `p1`, `ready`)
   2. `feat(peppol): validate Peppol BIS Billing 3.0 profile rules and Schematron business invariants` (`area:runtime`, `p1`, `ready`)
+- **Documented Prerequisite Dependencies**:
+  Explicitly noted in `## What Must Land First` that core EN 16931 UBL 2.1 e-invoicing (#83, #84, #123) MUST land first as Peppol BIS 3.0 is a customization profile built on UBL 2.1 XML documents.
 - **Updated Planning**:
   Updated `docs/NEXT.md` to document Newly Specified Standards unblocking Wave 3 Peppol e-invoicing implementation.
 

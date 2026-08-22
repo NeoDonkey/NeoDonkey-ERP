@@ -13,13 +13,15 @@ How must NeoDonkey structure Peppol BIS Billing 3.0 UBL 2.1 e-invoices, handle E
      - CustomizationID (`BT-24`): `urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`
      - ProfileID (`BT-23`): `urn:fdc:peppol.eu:2017:poacc:billing:01:1.0`
    - § 3.2 Endpoint Identifiers & Electronic Address Scheme (`EAS` / ISO 6523 ICD):
-     - Endpoint ID (`BT-49` for Buyer, `BT-34` for Seller) MUST carry `schemeID` attribute corresponding to a valid ISO 6523 ICD code (e.g., `0088` for GLN, `0106` for Dutch KvK, `0183` for Swiss UID, `0198` for ERN / German Leitweg-ID, `0204` for Leitweg-ID, `9930` for German VAT ID).
+     - Endpoint ID (`BT-49` for Buyer, `BT-34` for Seller) MUST carry `schemeID` attribute corresponding to a valid ISO 6523 ICD code (e.g., `0088` for GLN, `0106` for Dutch KvK, `0183` for Swiss UID, `0198` for ERN / Enterprise Registration Number, `0204` for German Leitweg-ID, `9930` for German VAT ID).
    - § 6.1 Peppol Business Rules:
-     - `PEPPOL-EN16931-R001`: Business process MUST be provided (`ProfileID`).
-     - `PEPPOL-EN16931-R002`: Specification identifier MUST be provided (`CustomizationID`).
-     - `PEPPOL-EN16931-R003`: Buyer electronic address MUST be provided (`BT-49` / `EndpointID`).
-     - `PEPPOL-EN16931-R004`: Seller electronic address MUST be provided (`BT-34` / `EndpointID`).
-     - `PEPPOL-EN16931-R008`: For invoice line net amounts (`BT-131`), unit price (`BT-146`), and line VAT amounts, arithmetic precision must be exact without float rounding anomalies.
+     - `PEPPOL-EN16931-R001`: Business process MUST be provided (`ProfileID` = `urn:fdc:peppol.eu:2017:poacc:billing:01:1.0`).
+     - `PEPPOL-EN16931-R002`: Document MUST contain at most one document-level note (`cbc:Note`) unless both parties are German.
+     - `PEPPOL-EN16931-R003`: Buyer reference (`BT-10`) or purchase order reference (`BT-13`) MUST be provided.
+     - `PEPPOL-EN16931-R004`: Specification identifier (`CustomizationID`) MUST equal `urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`.
+     - `PEPPOL-EN16931-R008`: Document MUST NOT contain empty XML elements.
+     - `PEPPOL-EN16931-R010`: Buyer electronic address MUST be provided (`BT-49` / `AccountingCustomerParty/Party/EndpointID`).
+     - `PEPPOL-EN16931-R020`: Seller electronic address MUST be provided (`BT-34` / `AccountingSupplierParty/Party/EndpointID`).
 2. **EN 16931-1:2017 § 6.1**:
    - Semantic data model for core invoice elements (BT-1 through BT-165).
 3. **ISO 6523 International Code Designator (ICD) / Peppol Code List EAS**:
@@ -38,11 +40,12 @@ How must NeoDonkey structure Peppol BIS Billing 3.0 UBL 2.1 e-invoices, handle E
 2. **Electronic Address Scheme (EAS / BT-34 & BT-49) Requirements**:
    - In Peppol Four-Corner networks, routing is performed via SML/SMP lookup based on `schemeID:endpointID`.
    - The seller (`AccountingSupplierParty/Party/EndpointID`) and buyer (`AccountingCustomerParty/Party/EndpointID`) MUST carry a valid `schemeID` attribute.
-   - NeoDonkey's domain invoice model MUST declare supplier and customer electronic endpoint addresses along with their ISO 6523 EAS scheme codes (e.g., `{ scheme: "0198", value: "04011000-12345678-90" }` or `{ scheme: "9930", value: "DE123456789" }`).
+   - NeoDonkey's domain invoice model MUST declare supplier and customer electronic endpoint addresses along with their ISO 6523 EAS scheme codes (e.g., `{ scheme: "0204", value: "04011000-12345678-90" }` or `{ scheme: "9930", value: "DE123456789" }`).
 
 3. **Validation & Rule Enforcement Engine**:
-   - NeoDonkey's runtime e-invoicing parser and validator (`runtime/e-invoicing/peppol.js`) MUST validate both standard EN 16931 rules and Peppol-specific rules (`PEPPOL-EN16931-R001` through `PEPPOL-EN16931-R008`).
-   - Any missing `EndpointID` or invalid `schemeID` MUST throw a explicit `ValidationError` with code `PEPPOL_MISSING_ENDPOINT` or `PEPPOL_INVALID_EAS_SCHEME`.
+   - NeoDonkey's runtime e-invoicing parser and validator (`runtime/e-invoicing/peppol.js`) MUST validate both standard EN 16931 rules and Peppol-specific rules (`PEPPOL-EN16931-R001` through `PEPPOL-EN16931-R020`).
+   - Missing `EndpointID` or invalid `schemeID` MUST trigger rule `PEPPOL-EN16931-R010` (buyer) or `PEPPOL-EN16931-R020` (seller) and throw an explicit `ValidationError` with code `PEPPOL_MISSING_ENDPOINT` or `PEPPOL_INVALID_EAS_SCHEME`.
+   - Empty XML tags (`<cbc:Note/>`) MUST be rejected under `PEPPOL-EN16931-R008` with `PEPPOL_EMPTY_ELEMENT`.
    - Monetary values in Peppol invoices MUST follow FD-1 string token constraints (`100.00 EUR`) and minor unit `BigInt` arithmetic. Zero floating-point arithmetic is permitted in line item pricing or tax breakdowns.
 
 ## Source Code & Constraint Checklist
@@ -55,7 +58,9 @@ When implementing Peppol BIS 3.0 serialization and validation:
 
 ## What Must Land First
 
-Filing the issue specifications defined below as open GitHub issues MUST land first before implementation can be claimed via `Closes #N`.
+Peppol BIS Billing 3.0 is a specialization layer on top of EN 16931 UBL 2.1 XML invoices. Therefore, core EN 16931 UBL 2.1 invoice serialization and parsing (`feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices` #83 and `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices` #84 / PR #142 for issue #123) MUST land first before Peppol-specific profile extensions and Schematron rule validators can be executed against base UBL 2.1 DOM objects.
+
+Furthermore, filing the issue specifications defined below as open GitHub issues via `gh issue create` MUST land first (as the automated execution environment lacks `GH_TOKEN` API credentials to execute `gh issue create` directly) before implementation can be claimed via `Closes #N`.
 
 ## Unblocked Implementable Issue Specifications
 
@@ -63,14 +68,14 @@ Filing the issue specifications defined below as open GitHub issues MUST land fi
 
 - **Source**: `docs/ROADMAP-V1.md` Part 2 Gate Condition 6; `docs/decisions/2026-08-21-peppol-bis-billing-3-0-e-invoicing-profile-and-schematron-validation.md`; OpenPeppol BIS Billing 3.0 §3.1 & §3.2.
 - **Goal**: Implement `generatePeppolBis3Xml(invoice, options)` in `runtime/e-invoicing/peppol.js` that emits valid Peppol BIS Billing 3.0 UBL 2.1 XML containing mandatory `CustomizationID`, `ProfileID`, and `EndpointID` attributes with ISO 6523 `schemeID` (EAS).
-- **Verification**: `test/peppol.test.js` asserts generated XML against a fixture, verifying presence of `CustomizationID` (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`), `ProfileID` (`urn:fdc:peppol.eu:2017:poacc:billing:01:1.0`), and exact `EndpointID` elements with `schemeID="0198"` / `schemeID="9930"`. Fails if profile elements or `schemeID` attributes are missing or malformed.
+- **Verification**: `test/peppol.test.js` asserts generated XML against a fixture, verifying presence of `CustomizationID` (`urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`), `ProfileID` (`urn:fdc:peppol.eu:2017:poacc:billing:01:1.0`), and exact `EndpointID` elements with `schemeID="0204"` / `schemeID="9930"`. Fails if profile elements or `schemeID` attributes are missing or malformed.
 - **Constraints**: Zero dependencies, no float math, exact string tokens for money (`FD-1`).
 - **Labels**: `area:runtime`, `p1`, `ready`.
 
 ### Issue Specification 2: `feat(peppol): validate Peppol BIS Billing 3.0 profile rules and Schematron business invariants`
 
-- **Source**: `docs/ROADMAP-V1.md` Part 2 Gate Condition 6; `docs/decisions/2026-08-21-peppol-bis-billing-3-0-e-invoicing-profile-and-schematron-validation.md`; OpenPeppol BIS Billing 3.0 §6.1 (`PEPPOL-EN16931-R001`..`R008`).
-- **Goal**: Implement `validatePeppolBis3Xml(xmlString)` in `runtime/e-invoicing/peppol.js` that parses XML and asserts compliance with Peppol business rules (`PEPPOL-EN16931-R001` through `R008`), validating profile IDs, endpoint schemes, and line arithmetic.
-- **Verification**: `test/peppol.test.js` passes valid Peppol XML documents and throws `ValidationError` with specific error codes (`PEPPOL_MISSING_CUSTOMIZATION_ID`, `PEPPOL_MISSING_ENDPOINT`, `PEPPOL_INVALID_EAS_SCHEME`) when profile rules are violated.
+- **Source**: `docs/ROADMAP-V1.md` Part 2 Gate Condition 6; `docs/decisions/2026-08-21-peppol-bis-billing-3-0-e-invoicing-profile-and-schematron-validation.md`; OpenPeppol BIS Billing 3.0 §6.1 (`PEPPOL-EN16931-R001`..`R020`).
+- **Goal**: Implement `validatePeppolBis3Xml(xmlString)` in `runtime/e-invoicing/peppol.js` that parses XML and asserts compliance with Peppol business rules (`PEPPOL-EN16931-R001` through `R020`), validating profile IDs, endpoint schemes, empty XML elements (`R008`), and mandatory endpoints (`R010`/`R020`).
+- **Verification**: `test/peppol.test.js` passes valid Peppol XML documents and throws `ValidationError` with specific error codes (`PEPPOL_MISSING_CUSTOMIZATION_ID`, `PEPPOL_MISSING_ENDPOINT`, `PEPPOL_INVALID_EAS_SCHEME`, `PEPPOL_EMPTY_ELEMENT`) when profile rules are violated.
 - **Constraints**: Pure JS parser, zero dependencies, source guard enforcing no `parseFloat`/`Number` on monetary attributes.
 - **Labels**: `area:runtime`, `p1`, `ready`.
