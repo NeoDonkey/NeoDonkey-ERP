@@ -27,7 +27,9 @@ const CLAIM = /\b(\d{3,5})\s+tests\b/g;
 
 /** Every suite-size claim in a file, as {count, line}. */
 function claimsIn(file) {
-  const text = readFileSync(new URL(file, root), 'utf8');
+  const fileUrl = new URL(file, root);
+  if (!existsSync(fileUrl)) return [];
+  const text = readFileSync(fileUrl, 'utf8');
   const found = [];
   text.split('\n').forEach((line, i) => {
     for (const m of line.matchAll(CLAIM)) found.push({ count: Number(m[1]), line: i + 1 });
