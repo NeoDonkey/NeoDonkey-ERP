@@ -78,6 +78,9 @@ Decision records in `docs/decisions/` have been updated with concrete, `ready` i
 9. **Chart of Accounts Template Onboarding & Opening Balance Initialization (`docs/decisions/2026-08-21-chart-of-accounts-template-onboarding-and-opening-balance-initialization.md`)**:
    - `feat(onboarding): parse and validate SKR03 and SKR04 JSON chart of accounts template definitions` (`area:runtime`, `p1`, `ready`)
    - `feat(onboarding): post initial Eröffnungsbilanz company setup journal entries with EBK 9000 zero-balance invariant check` (`area:runtime`, `p1`, `ready`)
+10. **Peppol BIS Billing 3.0 E-Invoicing Profile & Schematron Validation (`docs/decisions/2026-08-21-peppol-bis-billing-3-0-e-invoicing-profile-and-schematron-validation.md`)**:
+   - `feat(peppol): serialize Peppol BIS Billing 3.0 UBL 2.1 invoice documents with EAS endpoint identifiers` (`area:runtime`, `p1`, `ready`)
+   - `feat(peppol): validate Peppol BIS Billing 3.0 profile rules and Schematron business invariants` (`area:runtime`, `p1`, `ready`)
 
 Filed open issues (#81, #82, #83, #84) can be claimed immediately by engineering sessions. Additional defined issue specifications above will be claimable as soon as filed as open GitHub issues.
 
