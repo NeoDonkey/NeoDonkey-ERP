@@ -13,7 +13,7 @@ How must NeoDonkey structure Peppol BIS Billing 3.0 UBL 2.1 e-invoices, handle E
      - CustomizationID (`BT-24`): `urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0`
      - ProfileID (`BT-23`): `urn:fdc:peppol.eu:2017:poacc:billing:01:1.0`
    - § 3.2 Endpoint Identifiers & Electronic Address Scheme (`EAS` / ISO 6523 ICD):
-     - Endpoint ID (`BT-49` for Buyer, `BT-34` for Seller) MUST carry `schemeID` attribute corresponding to a valid ISO 6523 ICD code (e.g., `0088` for GLN, `0106` for Dutch KvK, `0183` for Swiss UID, `0198` for ERN / Enterprise Registration Number, `0204` for German Leitweg-ID, `9930` for German VAT ID).
+     - Endpoint ID (`BT-49` for Buyer, `BT-34` for Seller) MUST carry `schemeID` attribute corresponding to a valid ISO 6523 ICD code (e.g., `0088` for GLN, `0106` for Dutch KvK, `0183` for Swiss UID, `0198` for Danish ERSTORG, `0204` for German Leitweg-ID, `9930` for German VAT ID).
    - § 6.1 Peppol Business Rules:
      - `PEPPOL-EN16931-R001`: Business process MUST be provided (`ProfileID` = `urn:fdc:peppol.eu:2017:poacc:billing:01:1.0`).
      - `PEPPOL-EN16931-R002`: Document MUST contain at most one document-level note (`cbc:Note`) unless both parties are German.
@@ -60,7 +60,7 @@ When implementing Peppol BIS 3.0 serialization and validation:
 
 Peppol BIS Billing 3.0 is a specialization layer on top of EN 16931 UBL 2.1 XML invoices. Therefore, core EN 16931 UBL 2.1 invoice serialization and parsing (`feat(xrechnung): generate EN-16931 UBL 2.1 XML invoices` #83 and `feat(xrechnung): parse and validate EN-16931 UBL 2.1 XML invoices` #84 / PR #142 for issue #123) MUST land first before Peppol-specific profile extensions and Schematron rule validators can be executed against base UBL 2.1 DOM objects.
 
-Furthermore, filing the issue specifications defined below as open GitHub issues via `gh issue create` MUST land first (as the automated execution environment lacks `GH_TOKEN` API credentials to execute `gh issue create` directly) before implementation can be claimed via `Closes #N`.
+Furthermore, filing the issue specifications defined below as open GitHub issues MUST land first before implementation can be claimed via `Closes #N`.
 
 ## Unblocked Implementable Issue Specifications
 
